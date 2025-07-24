@@ -54,9 +54,11 @@ try:
     if json_respone_data:
         if json.loads(json_respone_data).get("key") == "uploadFirmwareSuccess":
             print("Firmware upload successful.")
-            os.system("python C:\\Users\\daila\\Documents\\PlatformIO\\Projects\\PowerBankESP32\\test\\serial_monitor.py")
+            print("->Opened serial monitor")
+            os.system('python "C:\\Users\\daila\\Documents\\PlatformIO\\Projects\\PowerBankESP32\\tools\\serial_monitor.py"')
         else:
             print("Firmware upload failed.")
+            print("Error: " + json.loads(json_respone_data).get("error"))
     else:
         print("No response from server after firmware upload.")
     
