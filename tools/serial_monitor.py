@@ -31,4 +31,5 @@ if __name__ == "__main__":
             )
             ws.run_forever()
         except websocket.WebSocketConnectionClosedException:
+            time.sleep(1)
             print("Connection closed. Please check the server status.")
