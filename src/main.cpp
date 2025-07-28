@@ -6,6 +6,7 @@
 #include <HTTPClient.h>
 #include <IP5356.h>
 #include <Log.h>
+#include "OtaUpdate.h"
 
 const char* ssid = "DESKTOP-P5540";
 const char* password = "aaaaaaaa";
@@ -37,35 +38,35 @@ void setup() {
         delay(500);
         app_log(".", "");
     }
-
+    app_log("");
 
 
     xTaskCreatePinnedToCore(webSocketTask, "WebSocketTask", 8192, NULL, 1, NULL, 0);
 
 
-    delay(1000);
-    app_log("\nDa ket noi!");
-    app_log("IP Address: ", "");
-    app_log(WiFi.localIP().toString().c_str());
-    app_log("RSSI: ", "");
-    app_log(String(WiFi.RSSI()) + " dBm");
-    app_log("Gateway: ", "");
-    app_log(WiFi.gatewayIP().toString().c_str());
-    app_log("Subnet: ", "");
-    app_log(WiFi.subnetMask().toString().c_str());
-    app_log("Broadcast IP: ", "\r");
-    app_log(WiFi.softAPBroadcastIP().toString().c_str());
-    app_log("Hostname: ", "");
-    app_log(WiFi.getHostname());
-    app_log("MAC Address: ", "");
-    app_log(WiFi.macAddress().c_str());
-    app_log("Channel: ", "");
-    app_log(WiFi.channel());
-    app_log("Mode: ", "");
-    app_log(WiFi.getMode() == WIFI_MODE_STA ? "STA" : (
+    delay(2000);
+    app_log("Wifi connected!");
+    app_log_i("IP Address: ", "");
+    app_log_i(WiFi.localIP().toString().c_str());
+    app_log_i("RSSI: ", "");
+    app_log_i(String(WiFi.RSSI()) + " dBm");
+    app_log_i("Gateway: ", "");
+    app_log_i(WiFi.gatewayIP().toString().c_str());
+    app_log_i("Subnet: ", "");
+    app_log_i(WiFi.subnetMask().toString().c_str());
+    app_log_i("Broadcast IP: ", "");
+    app_log_i(WiFi.softAPBroadcastIP().toString().c_str());
+    app_log_i("Hostname: ", "");
+    app_log_i(WiFi.getHostname());
+    app_log_i("MAC Address: ", "");
+    app_log_i(WiFi.macAddress().c_str());
+    app_log_i("Channel: ", "");
+    app_log_i(WiFi.channel());
+    app_log_i("Mode: ", "");
+    app_log_i(WiFi.getMode() == WIFI_MODE_STA ? "STA" : (
         WiFi.getMode() == WIFI_MODE_AP ? "AP" : "STA+AP"));
-    app_log("Status: ", "");
-    app_log(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
+    app_log_i("Status: ", "");
+    app_log_i(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
 
 
     // while (digitalRead(5) == LOW) {
@@ -95,12 +96,56 @@ void scanI2C() {
     }
 }
 
+String addPaddingBin8(uint8_t value) {
+    String str = String(value) + " | ";
+    String bin = String(value, BIN);
+    String padding = "";
+    for (uint8_t i = 0; i < 8 - bin.length();i++) {
+        padding = "0" + padding;
+    }
+    str += padding + bin;
+    return str;
+}
+
+
+String loadDataIP5356(uint8_t addr, uint8_t reg) {
+    Wire.beginTransmission((uint8_t)addr);
+    Wire.write(reg);
+    Wire.endTransmission();
+    Wire.requestFrom((uint8_t)addr, (uint8_t)1);
+    String str = "0x";
+    if (reg < 16) {
+        str += "0";
+    }
+
+    str += String(reg, HEX) + ": ";
+    if (Wire.available()) {
+        uint8_t value = Wire.read();
+        if (value < 10) {
+            str += "  ";
+        }
+        else if (value < 100) {
+            str += " ";
+        }
+
+        str += String(value) + " | ";// + String(value, BIN);
+        String bin = String(value, BIN);
+        String padding = "";
+        for (uint8_t i = 0; i < 8 - bin.length();i++) {
+            padding = "0" + padding;
+        }
+        str += padding + bin;
+    }
+    str += "\n";
+    return str;
+}
+
 void loop() {
 
     // // app_log(String(anaapp_logRead(35))+"", "\r");
 
     // // delay(100);
-    // //scanI2C();
+    //scanI2C();
 
     // for (int i = 0; i < 10; i++) {
     //     //scanI2C();
@@ -132,10 +177,51 @@ void loop() {
 
     // for(int i = 0; i < 5; i++) {
     //     app_log("Loop iteration: " + String(i+1));
-         vTaskDelay(1000);
+    vTaskDelay(3000);
     // }
-    app_log(ip5356->getPercentage());
 
+    // while (mainLog.getLogMode() != LoggerManager::MODE_WEBSOCKETS) {
+    //     delay(1000);
+    // }
+    uint32_t time = millis();
+    app_log("per: " + String(ip5356->getBatteryPercentage()));
+    app_log("vbat: " + String(ip5356->getBatteryVoltage()));
+    app_log("ibat: " + String(ip5356->getBatteryCurrent()));
+    app_log("ntc: " + String(ip5356->getBatteryTemperature()));
+    app_log("vsys: " + String(ip5356->getSystemVoltage()));
+    app_log("isys: " + String(ip5356->getSystemCurrent()));
+    app_log("psys: " + String(ip5356->getSystemPower()));
+    app_log("vout1: " + String(ip5356->getUSB1Voltage()));
+    app_log("iout1: " + String(ip5356->getUSB1Current()));
+    app_log("vout2: " + String(ip5356->getUSB2Voltage()));
+    app_log("iout2: " + String(ip5356->getUSB2Current()));
+    app_log("vbus: " + String(ip5356->getVBUSVoltage()));
+    app_log("ibus: " + String(ip5356->getVBUSCurrent()));
+    app_log("vbusprotocol: " + String(static_cast<uint8_t>(ip5356->getVBUSSourceFrotocol())));
+    app_log("vbusPort: " + String(static_cast<uint8_t>(ip5356->getVBUSPortStatus())));
+    app_log("vout2protocol: " + String(static_cast<uint8_t>(ip5356->getUSB2SourceFrotocol())));
+    app_log("vout1protocol: " + String(static_cast<uint8_t>(ip5356->getUSB1SourceFrotocol())));
+    app_log("chargeStatus: " + String(static_cast<uint8_t>(ip5356->getChargeStatus())));
+    // app_log("vin: " + String(ip5356->getVINVoltage()));
+     //app_log("iin: " + String(ip5356->getVINCurrent()));
+
+    app_log("time: " + String(millis() - time) + "ms");
+    app_log("sizeof IP5356: " + String(sizeof(IP5356)));
+    app_log("sizeof websocket: " + String(sizeof(websocket)));
+
+    // String str = "IP5356_0X74_REG:\n";
+    // for (uint8_t reg : IP5356_0X74_REG_ARR) {
+    //     str+=loadDataIP5356(0x74, reg);
+    // }
+    // app_log(str);
+
+
+
+    // str = "IP5356_0X75_REG:\n";
+    // for (uint8_t reg : IP5356_0X75_REG_ARR) {
+    //     str += loadDataIP5356(0x75, reg);
+    // }
+    // app_log(str);
 }
 
 
@@ -221,49 +307,116 @@ void handleMessage(uint8_t num, uint8_t* payload) {
     JsonDocument messageJon;
     DeserializationError error = deserializeJson(messageJon, payload);
     if (error) {
-        app_log("Deserialization failed: " + String(error.c_str()));
+        app_log_e("Deserialization failed: " + String(error.c_str()));
         return;
     }
 
     if (!messageJon["key"].is<const char*>()) {
-        app_log("No 'key' in message");
+        app_log_e("No 'key' in message");
         return;
     }
     String key = messageJon["key"].as<String>();
     app_log("Received key: " + key);
 
-    if (key == "uploadFirmwareStart") {
-        if (Update.isRunning()) {
-            Update.abort();
-        }
-        if (!messageJon["size"].is<uint32_t>()) {
-            return;
-        }
-        if (!Update.begin(messageJon["size"].as<uint32_t>())) {
-            app_log("Update begin failed: " + String(Update.errorString()));
-            return;
-        }
-        app_log("Firmware upload started, size: " + String(messageJon["size"].as<uint32_t>()));
-    }
-    else if (key == "uploadFirmwareEnd") {
-        if (Update.end()) {
-            app_log("Update successful!\nrestarting...");
-            websocket.sendTXT(num, "{\"key\":\"uploadFirmwareSuccess\"}");
-            websocket.close();
-            vTaskDelay(1000);
-            ESP.restart();
-        }
-        else {
-            websocket.sendTXT(num, "{\"key\":\"updateFirmwareFailed\", \"error\":\"" + String(Update.errorString()) + "\"}");
-            app_log("Update end failed: " + String(Update.errorString()));
-        }
+    if (key == "otaUploadFirmware") {
+        OtaUpdate::handleCommand(websocket, num, messageJon);
     }
     else if (key == "initSerialMonitor") {
         mainLog.setLogModeWebSockets(&websocket, num);
         app_log("Serial monitor client connected: " + String(num));
     }
+    else if(key == "restart"){
+        app_log_i("Restarting...");
+        vTaskDelay(1000);
+        websocket.disconnect();
+        websocket.close();
+        ESP.restart();
+    }
+    else if (key == "readIP5356") {
+        if (!messageJon["addr"].is<uint32_t>()) {
+            app_log_e("Not have \"addr\" in json");
+            return;
+        }
+        if (!messageJon["reg"].is<uint32_t>()) {
+            app_log_e("Not have \"reg\" in json");
+            return;
+        }
+        uint32_t addr = messageJon["addr"].as<uint32_t>();
+        if (addr != 0x74 && addr != 0x75) {
+            app_log_e("addr incorrect");
+            return;
+        }
+        uint32_t reg = messageJon["reg"].as<uint32_t>();
+        if (reg > 0xFF) {
+            app_log_e("reg out of range(uint8_t)");
+            return;
+        }
+        uint8_t value = 0;
+        if (ip5356->_read(addr, reg, &value)) {
+            app_log_i("[0x" + String(addr, HEX) + "][0x" + String(reg, HEX) + "]: " + addPaddingBin8(value));
+        }
+        else{
+            app_log_e("Can not read ip5356 (maybe sleep)");
+        }
+    }
+    else if (key == "writeIP5356") {
+        if (!messageJon["addr"].is<uint32_t>()) {
+            app_log_e("Not have \"addr\" in json");
+            return;
+        }
+        if (!messageJon["reg"].is<uint32_t>()) {
+            app_log_e("Not have \"reg\" in json");
+            return;
+        }
+        if (!messageJon["value"].is<uint32_t>()) {
+            app_log_e("Not have \"reg\" in json");
+            return;
+        }
+        uint32_t addr = messageJon["addr"].as<uint32_t>();
+        if (addr != 0x74 && addr != 0x75) {
+            app_log_e("addr incorrect");
+            return;
+        }
+        uint32_t reg = messageJon["reg"].as<uint32_t>();
+        if (reg > 0xFF) {
+            app_log_e("reg out of range(uint8_t)");
+            return;
+        }
+        uint32_t value = messageJon["value"].as<uint32_t>();
+        if(value > 255){
+            app_log_e("value out of range(uint8_t)");
+            return;
+        }
+        uint8_t temp = value;
+        if (!ip5356->_write(addr, reg, &temp)) {
+            app_log_e("Can not read ip5356 (maybe sleep)");
+        }
+    }
+    else if(key == "readFileFromLittleFS"){
+        if (!messageJon["name"].is<const char*>()) {
+            app_log_e("Not have \"name\" in json");
+            return;
+        }
+        String name = messageJon["name"].as<const char*>();
+        File file = LittleFS.open(name, "r");
+        if (!file) {
+            app_log("Failed to open file for writing");
+            websocket.sendTXT(num, "{\"key\":\"openFileFailed\"}");
+            return;
+        }
+        websocket.sendTXT(num, "{\"key\":\"openFileSuccess\"}");
+        uint32_t readByte = 0, read;
+        uint8_t buffer[1024];
+        while(readByte < file.size()){
+            read = file.read(buffer, 1024);
+            websocket.sendBIN(num, buffer, read);
+            readByte += read;
+        }
+        websocket.sendTXT(num, "{\"key\":\"readFileSuccess\"}");
+    }
+
     else {
-        app_log("Unknown key: " + key);
+        app_log_e("Unknown key: " + key);
     }
 
 }
@@ -271,30 +424,19 @@ void handleMessage(uint8_t num, uint8_t* payload) {
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
     switch (type) {
     case WStype_TEXT:
-        app_log("[" + String(num) + "] Received text message: " + String((char*)payload));
+        app_log_i("[" + String(num) + "] Received text message: " + String((char*)payload));
         handleMessage(num, payload);
         break;
     case WStype_BIN:
-        if (Update.isRunning()) {
-            if (Update.write(payload, length) != length) {
-                Update.abort();
-            }
-            else {
-                size_t total_byte_received = Update.progress() + length;
-                String end_char = "\r";
-                if (Update.isFinished()) {
-                    end_char = "\n";
-                }
-                app_log("Received: " + String(total_byte_received) + "/" + String(Update.size())
-                    + " bytes | " + String((total_byte_received * 100) / Update.size()) + "%", end_char);
-            }
+        if(OtaUpdate::isRunning()){
+            OtaUpdate::write(payload, length);
         }
         break;
     case WStype_CONNECTED:
-        app_log("[" + String(num) + "] Connected!");
+        app_log_i("[" + String(num) + "] Connected!");
         break;
     case WStype_DISCONNECTED:
-        app_log("[" + String(num) + "] Disconnected!");
+        app_log_i("[" + String(num) + "] Disconnected!");
         if (mainLog.getLogMode() != LoggerManager::MODE_WEBSOCKETS) {
             break;
         }
