@@ -1,6 +1,5 @@
 #include "log.h"
 
-// =================== SerialLogger ===================
 
 bool SerialLogger::_isSerialBegin = false;
 
@@ -18,8 +17,6 @@ void SerialLogger::log(LogLevel level, const String& message, String endchar) {
     Serial.print(totalMessage);
 }
 
-
-// =================== WebSocketLogger ===================
 
 WebSocketLogger::WebSocketLogger(WebSocketsServer* websocket, uint8_t idClient)
     : _websocket(websocket), _idClient(idClient) {
@@ -39,8 +36,6 @@ uint8_t WebSocketLogger::getIdClientWebSockets() const {
 }
 
 
-// =================== LoggerManager ===================
-
 LoggerManager::LoggerManager() {
     setLogModeSerial();
 }
@@ -56,7 +51,7 @@ void LoggerManager::setLogModeSerial(unsigned long baud) {
     }
     _currentLogger = new SerialLogger(baud);
     _mode = MODE_SERIAL;
-    app_log("Logger set to Serial mode.");
+    app_log_i("Logger set to Serial mode.");
 }
 
 void LoggerManager::setLogModeWebSockets(WebSocketsServer* websocket, uint8_t idClient) {
@@ -65,7 +60,7 @@ void LoggerManager::setLogModeWebSockets(WebSocketsServer* websocket, uint8_t id
     }
     _currentLogger = new WebSocketLogger(websocket, idClient);
     _mode = MODE_WEBSOCKETS;
-    app_log("Logger set to WebSocket mode.");
+    app_log_i("Logger set to WebSocket mode.");
 }
 
 Logger* LoggerManager::getLogger() {
@@ -83,14 +78,12 @@ void LoggerManager::log(Logger::LogLevel level, const String& message, const cha
 }
 
 
-// =================== FileLogger ===================
-
 bool FileLogger::_isLittleFSBegin = false;
 
 FileLogger::FileLogger(String filename) : _filename(filename) {
     if (!_isLittleFSBegin) {
         if (!LittleFS.begin()) {
-            app_log("An Error has occurred while mounting LittleFS");
+            app_log_e("An Error has occurred while mounting LittleFS");
             _isLittleFSBegin = true;
             _isError = true;
         }
@@ -104,7 +97,7 @@ FileLogger::FileLogger(String filename) : _filename(filename) {
 void FileLogger::log(LogLevel level, const String& message, String endchar) {
     File file = LittleFS.open(_filename, "a");
     if (!file) {
-        app_log("Failed to open file for writing");
+        app_log_e("Failed to open file for writing");
         _isError = true;
         return;
     }

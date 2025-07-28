@@ -5,7 +5,9 @@
 #include <LittleFS.h>
 #include <WebSocketsServer.h>
 
-// =================== Base Logger ===================
+/**
+ * @brief Base class for logging
+ */
 class Logger {
 public:
     enum LogLevel {
@@ -33,7 +35,10 @@ public:
     virtual ~Logger() = default;
 };
 
-// =================== Serial Logger ===================
+
+/**
+ * @brief SerialLogger class for logging to Serial
+ */
 class SerialLogger : public Logger {
 private:
     static bool _isSerialBegin;
@@ -44,7 +49,10 @@ public:
     void log(LogLevel level, const String& message, String endchar = "\n") override;
 };
 
-// =================== WebSocket Logger ===================
+
+/**
+ * @brief WebSocketLogger class for logging to WebSockets
+ */
 class WebSocketLogger : public Logger {
 private:
     WebSocketsServer* _websocket = nullptr;
@@ -57,7 +65,9 @@ public:
 };
 
 
-// =================== File Logger ===================
+/**
+ * @brief FileLogger class for logging to a file in LittleFS
+ */
 class FileLogger : public Logger {
 private:
     static bool _isLittleFSBegin;
@@ -71,7 +81,9 @@ public:
 };
 
 
-// =================== Logger Manager ===================
+/**
+ * @brief LoggerManager class to manage different logging modes
+ */
 class LoggerManager {
 public:
     enum LogMode {
@@ -82,6 +94,7 @@ public:
 private:
     Logger* _currentLogger = nullptr;
     LogMode _mode;
+
 public:
     LoggerManager();
     ~LoggerManager();
@@ -116,10 +129,9 @@ public:
 };
 
 
-
 extern LoggerManager mainLog;
 
-// =================== Macros ===================
+// Macros for logging
 #ifdef ENABLE_APP_LOG
 #define app_log_i(message, ...) mainLog.info(message,__FILE__, __LINE__, ##__VA_ARGS__)
 #define app_log_e(message, ...) mainLog.error(message,__FILE__, __LINE__, ##__VA_ARGS__)
