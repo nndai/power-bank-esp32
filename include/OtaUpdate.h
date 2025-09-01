@@ -6,6 +6,10 @@
 #include <ArduinoJson.h>
 #include <Log.h>
 
+#define KEY_UPLOAD_FIRMWARE "otaUploadFirmware"
+#define CMD_UPLOAD_FIRMWARE_START "uploadFirmwareStart"
+#define CMD_UPLOAD_FIRMWARE_END "uploadFirmwareEnd"
+
 /**
  * @brief Class to handle OTA updates using WebSockets
  */
@@ -15,7 +19,7 @@ private:
      * @brief Private constructor to prevent instantiation
      */
     OtaUpdate() = default;
-    
+
 public:
     /**
      * @brief Handle incoming WebSocket messages
@@ -29,7 +33,7 @@ public:
             return;
         }
         String cmd = command["cmd"].as<String>();
-        if (cmd == "uploadFirmwareStart") {
+        if (cmd == CMD_UPLOAD_FIRMWARE_START) {
             if (Update.isRunning()) {
                 Update.abort();
             }
@@ -45,14 +49,14 @@ public:
             app_log("Firmware upload started, size: " + String(command["size"].as<uint32_t>()));
             websocket.sendTXT(num, "{\"cmd\":\"beginUploadFirmwareSuccess\"}");
         }
-        else if (cmd == "uploadFirmwareEnd") {
+        else if (cmd == CMD_UPLOAD_FIRMWARE_END) {
             if (Update.end()) {
                 app_log_i("Update successful! -->restarting...");
                 websocket.sendTXT(num, "{\"cmd\":\"uploadFirmwareSuccess\"}");
-                vTaskDelay(500);
+                vTaskDelay(pdMS_TO_TICKS(500));
                 websocket.disconnect();
                 websocket.close();
-                vTaskDelay(500);
+                vTaskDelay(pdMS_TO_TICKS(500));
                 ESP.restart();
             }
             else {
@@ -68,8 +72,6 @@ public:
 
     /**
      * @brief Write data to the update process
-     * @param websocket The WebSocket server instance
-     * @param num The client number
      * @param payload The data to write
      * @param length The length of the data
      */
