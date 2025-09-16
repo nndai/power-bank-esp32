@@ -2,14 +2,17 @@
 #define IP5356_H
 
 #include <Wire.h>
-#include <log.h>
+#include <Log.h>
 
 /**
  * @brief IP5356 Power Management IC (PMIC) driver
  *
  */
 class IP5356 {
-private:
+public:
+    const uint8_t address1 = 0x74; // I2C address for IP5356
+    const uint8_t address2 = 0x75; // I2C address for IP5356
+
     /**
      * @brief Registers for I2C address 0x74 (Write: 0xE8, Read: 0xE9)
      */
@@ -155,10 +158,10 @@ private:
     /**
      * @brief Array check register in address 0x74
      * 0: not a register in ip5356
-     * 1: R\W
-     * 2: R
+     * 1: R
+     * 2: R/W
      */
-    static const uint8_t CheckReg0x74Arr[256];
+    static const uint8_t checkReg0x74Arr[256];
     
     /**
      * @brief Array check register in address 0x75
@@ -166,23 +169,31 @@ private:
      * 1: R
      * 2: R/W
      */
-    static const uint8_t CheckReg0x75Arr[256];
+    static const uint8_t checkReg0x75Arr[256];
+
+    /**
+     * @brief Delete any existing key press task
+     */
+    void deletePressTask();
 
 private:
-    static IP5356* _ip5356;
-    FileLogger* _log = nullptr;
+    TwoWire* _i2c;
+    const float _iNTC = 8e-5f; // 80μA
+    const float _rNTC = 10000; // 10kΩ
 
-    const float iNTC = 8e-5f; // 80μA
-    const float rNTC = 10000; // 10kΩ
+    int8_t _ntcDiePin;
+    int8_t _keyPin;
+    int8_t _intPin;
+
+    TaskHandle_t _shortPressTaskHandle = NULL;
+    TaskHandle_t _longPressTaskHandle = NULL;
+    TaskHandle_t _doublePressTaskHandle = NULL;
+    TaskHandle_t _resetWholeSystemTaskHandle = NULL;
 
 
-private:
-    IP5356(const IP5356&) = delete;
-    IP5356& operator=(const IP5356&) = delete;
-
-    IP5356();
 
 public:
+    
     /**
      * @brief Read 1 byte data from a specific register of a given I2C address.
      * @param addr The I2C address to read from.
@@ -221,91 +232,103 @@ public:
     bool _write(IP5356_0X74_REG reg, uint8_t* data);
     bool _write(IP5356_0X75_REG reg, uint8_t* data);
 
-
+    /**
+     * @brief Check if a register can be read from a specific I2C address.
+     * @param addr The I2C address to check.
+     * @param reg The register to check.
+     * @return true if the register can be read
+    */
     bool checkRegRead(uint8_t addr, uint8_t reg);
+
+    /**
+     * @brief Check if a register can be written to a specific I2C address.
+     * @param addr The I2C address to check.
+     * @param reg The register to check.
+     * @return true if the register can be written
+    */
     bool checkRegWrite(uint8_t addr, uint8_t reg);
 
 
 public:
-    static IP5356* getInstance();
-    void begin();
+    IP5356(TwoWire* wire = &Wire, int8_t ntcDiePin = -1, int8_t keyPin = -1, int8_t intPin = -1);
+
+    void init();
+
+    String loadRegData(uint8_t addr, uint8_t reg);
+    String loadAllRegData();
 
     /**
-     * @brief Read percentage
+     * @brief Check if the IP5356 is I2C connected
      */
-    uint8_t getBatteryPercentage();
+    bool isConnected();
+
+    bool isWork();
+
+    void powerOff();
+
+    void isysLowAutoOff(bool on = false);
+
+    bool checkIsysLow();
+
+    void set8sAutoOff();
 
     /**
-     * @brief Read battery voltage
+     * @brief Read battery information
      */
-    float getBatteryVoltage();
-
-    /**
-     * @brief Read battery current
-     */
+    uint8_t getBatteryPercentage(); // %
+    float getBatteryVoltage();      // mV
     float getBatteryCurrent();
-
-    /**
-     * @brief Read battery temperature (NTC)    
-     */
     float getBatteryTemperature();
+    float getBatteryPower();
 
     /**
-     * @brief Read VSYS voltage
+     * @brief Read VSYS information
      */
     float getSystemVoltage();
-
-    /**
-     * @brief Read VSYS current
-     */
     float getSystemCurrent();
-
-    /**
-     * @brief Read VSYS power
-     */
     float getSystemPower();
 
     /**
-     * @brief Read VOUT1 voltage
+     * @brief Read VOUT1 information
      */
     float getUSB1Voltage();
-
-    /**
-     * @brief Read VOUT1 current
-     */
     float getUSB1Current();
+    float getUSB1Power();
 
     /**
-     * @brief Read VOUT2 voltage
+     * @brief Read VOUT2 information
      */
     float getUSB2Voltage();
-
-    /**
-     * @brief Read VOUT2 current
-     */
     float getUSB2Current();
+    float getUSB2Power();
 
     /**
-     * @brief Read VBUS(typeC) voltage
+     * @brief Read VBUS(typeC) information
      */
     float getVBUSVoltage();
-
-    /**
-     * @brief Read VBUS(typeC) current
-     */
     float getVBUSCurrent();
+    float getVBUSPower();
 
-#ifdef USING_VIN
     /**
-     * @brief Read VIN voltage
+     * @brief Read VIN information
      */
     float getVINVoltage();
+    float getVINCurrent();
+    float getVINPower();
 
     /**
-     * @brief Read VIN current
+     * @brief Read Internal Temperature
      */
-    float getVINCurrent();
-#endif
+    float getInternalTemperature();
+
+    /**
+     * @brief Key press handling
+     */
+    void shortPressKey();
+    void longPressKey();
+    void doublePressKey();
+    void resetWholeSystem();
+
 
 public:
     /**
@@ -339,7 +362,7 @@ public:
         CHARGE_TO_BOOST_WAIT,
     };
 
-    enum class FAST_CHARGE_FROTOCOL {
+    enum class FAST_CHARGE_PROTOCOL {
         NONE = 0,
         DCP,
         QC_HANDSHAKE_OK,
@@ -365,57 +388,25 @@ public:
         SOURCE,
     };
 
-    // --- Struct chứa tất cả thông tin trạng thái ---
-
-    struct Status {
-        // Trạng thái sạc & hệ thống
-        CHARGE_STATUS chargeStatus;
-        SYSTEM_MODE systemMode;
-        bool isCharging;
-        bool isDischarging;
-
-        // Trạng thái sạc nhanh
-        bool isInputFastCharging;
-        FAST_CHARGE_FROTOCOL vout1Protocol;
-        FAST_CHARGE_FROTOCOL vout2Protocol;
-        FAST_CHARGE_FROTOCOL vbusProtocol;
-
-        // Trạng thái các cổng output
-        bool isVout1Enabled;
-        bool isVout2Enabled;
-        bool isVbusEnabled;
-
-        // Trạng thái pin & nguồn
-        uint8_t batteryPercent; // Phần trăm pin (SoC)
-        float batteryVoltage_V;
-        float batteryCurrent_A;
-        float inputVoltage_V;
-        float inputCurrent_A;
-
-        // Trạng thái phím & cờ bảo vệ
-        KEY_PRESS keyPress;
-        bool isBatteryLow;
-        bool isBoostOverCurrent;
-        bool isBoostShortCircuit;
-    };
 
     /**
      * 
      */
     NTC_STATE_FLAG getNtcState();
 
-    FAST_CHARGE_FROTOCOL convertValueToProtocol(uint8_t value);
+    String protocolToString(FAST_CHARGE_PROTOCOL protocol);
+    FAST_CHARGE_PROTOCOL convertValueToProtocol(uint8_t value);
 
-    FAST_CHARGE_FROTOCOL getVBUSSourceFrotocol();
-    FAST_CHARGE_FROTOCOL getUSB1SourceFrotocol();
-    FAST_CHARGE_FROTOCOL getUSB2SourceFrotocol();
+    FAST_CHARGE_PROTOCOL getVBUSSourceProtocol();
+    FAST_CHARGE_PROTOCOL getUSB1SourceProtocol();
+    FAST_CHARGE_PROTOCOL getUSB2SourceProtocol();
 
     PORT_STATE getVBUSPortStatus();
     PORT_STATE getUSB2PortStatus();//
 
     CHARGE_STATUS getChargeStatus();
 
-    void powerOff();
+    
 
 };
 

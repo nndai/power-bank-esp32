@@ -11,5 +11,8 @@ lib/ArduinoJson
 lib/WebSockets
 lib/SW6206
 lib/README
+lib/OneButton
+lib/TFT_eSPI
+lib/JPEGDEC
 
 test/README
