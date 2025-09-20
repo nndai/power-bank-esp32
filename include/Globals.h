@@ -5,6 +5,7 @@
 #include <TFT_eSPI.h>
 #include <Eeprom24C.h>
 #include <Log.h>
+#include <vector>
 #include "Brightness.h"
 
 
@@ -23,16 +24,21 @@
 
 #define EEPROM_DATA_ADDR 0
 
-struct EepromData {
-    uint8_t brightness;
-    uint16_t chargeCycle;
-    uint8_t percentCharged;
-    float batCapacity;
+struct PowerBankData {
+    uint8_t brightness = 50;
+    uint8_t percentCharged = 0;
+    uint16_t chargeCycle = 0;
+    float batCapacity = 0.0f;
+    uint8_t indexTimeAutoSleep = 2;
+    bool onLowBright = true;
+    bool reduceChargeCurrentWhenHot = false;
+    bool onWifi = false;
 };
 
-volatile float batCapacity;
-volatile uint16_t chargeCycle;
-volatile uint8_t percentCharged;
+extern std::vector<String> sleepOptions;
+extern std::vector<uint8_t> sleepValueOptions;
+
+extern volatile PowerBankData powerBankData;
 
 extern IP5356* ip5356;
 extern TFT_eSPI* tft;
@@ -41,7 +47,10 @@ extern Eeprom24C* eeprom;
 extern Brightness* brightness;
 
 static const unsigned char PROGMEM imageQuickCharge[] = { 0x00,0x00,0x00,0x00,0x00,0x40,0x00,0xc0,0x01,0x80,0x03,0x80,0x07,0x00,0x0f,0xe0,0x01,0xc0,0x03,0x80,0x03,0x00,0x06,0x00,0x04,0x00,0x00,0x00,0x00,0x00,0x00,0x00 };
-
 static const unsigned char PROGMEM imageWeatherTemperature[] = { 0x1c,0x00,0x22,0x02,0x2b,0x05,0x2a,0x02,0x2b,0x38,0x2a,0x60,0x2b,0x40,0x2a,0x40,0x2a,0x60,0x49,0x38,0x9c,0x80,0xae,0x80,0xbe,0x80,0x9c,0x80,0x41,0x00,0x3e,0x00 };
+
+
+void savePowerBankData(PowerBankData data);
+void sleep();
 
 #endif //GLOBALS_H

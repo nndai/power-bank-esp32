@@ -20,6 +20,7 @@ class WebSocketApp(customtkinter.CTk):
         self.message_queue = queue.Queue()
         self.is_connected = False
         self.is_uploading = False
+        self.is_display_error = False
 
         self.upload_failed_event = threading.Event()
 
@@ -101,7 +102,8 @@ class WebSocketApp(customtkinter.CTk):
 
     def on_ws_error(self, ws, error):
         """Callback for when a WebSocket error occurs on the main monitoring connection."""
-        self.message_queue.put(f"[ERROR] WebSocket connection error: {error}")
+        if self.is_display_error == False:
+            self.message_queue.put(f"[ERROR] WebSocket connection error: {error}")
         self.is_connected = False
         if self.is_uploading:
             self.upload_failed_event.set()
@@ -113,7 +115,9 @@ class WebSocketApp(customtkinter.CTk):
 
     def on_ws_close(self, ws, close_status_code, close_msg):
         """Callback for when the main WebSocket connection is closed."""
-        self.message_queue.put("[INFO] Connection closed. Attempting to reconnect...\n")
+        if self.is_display_error == False:
+            self.message_queue.put("[INFO] Connection closed. Attempting to reconnect...\n")
+            self.is_display_error = True
         self.is_connected = False
         if self.is_uploading:
             self.upload_failed_event.set()
@@ -127,6 +131,7 @@ class WebSocketApp(customtkinter.CTk):
         """Callback for when the main WebSocket connection is successfully opened."""
         self.message_queue.put("[INFO] Connected to ESP32 WebSocket\n")
         self.is_connected = True
+        self.is_display_error = False
 
         self.after(0, lambda: self.update_status("Connected", "green"))
         self.after(0, lambda: self.send_button.configure(state="normal"))

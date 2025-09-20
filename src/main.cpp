@@ -4,6 +4,7 @@
 #include <Esp.h>
 #include <HTTPClient.h>
 #include <LittleFS.h>
+#include <cstring>
 #include "OtaUpdate.h"
 #include "luffy.h"
 #include "Manager.h"
@@ -14,6 +15,13 @@
 
 const char* ssid = "DESKTOP-P5540";
 const char* password = "aaaaaaaa";
+
+std::vector<String> sleepOptions = { "Never", "20s", "30s", "1min", "2min", "5min", "10min" };
+std::vector<uint8_t> sleepValueOptions = { 0, 2, 3, 6, 12, 30, 60 }; // *10 -> second; 0 -> never
+
+volatile PowerBankData powerBankData;
+
+bool isConnectedWebsocket = false;
 
 IPAddress localIp(192, 168, 137, 194);
 IPAddress gateway(192, 168, 137, 1);
@@ -32,6 +40,21 @@ Brightness* brightness;
 IP5356* ip5356;
 Eeprom24C* eeprom;
 
+// --- LittleFS upload state ---
+static fs::File g_uploadFile;
+static bool g_uploadInProgress = false;
+static size_t g_uploadExpectedSize = 0;
+static size_t g_uploadWritten = 0;
+static bool g_uploadFailed = false;
+
+
+TaskHandle_t taskHandleDrawScreen = NULL;
+TaskHandle_t taskHandleSleep = NULL;
+TaskHandle_t taskHandleWifi = NULL;
+TaskHandle_t taskHandleCapacityCalculator = NULL;
+TaskHandle_t taskHandleChargeCycleCalculator = NULL;
+TaskHandle_t taskHandleWebsocket = NULL;
+TaskHandle_t taskHandleGoToSleep = NULL;
 
 
 void webSocketTask(void* p);
@@ -39,7 +62,7 @@ void app_loginWifiFree(void* p);
 String timeConnectWifiFree();
 
 void taskDrawScreen(void* p) {
-    vTaskDelay(pdMS_TO_TICKS(500));
+    vTaskDelay(pdMS_TO_TICKS(200));
     uint8_t count = 0;
     while (true) {
         buttonManager.tick();
@@ -56,14 +79,65 @@ void taskDrawScreen(void* p) {
     }
 }
 
-void sleep() {
+void savePowerBankData(PowerBankData data) {
+    eeprom->write(EEPROM_DATA_ADDR, &data, sizeof(data));
+}
+
+void goToSleep(void* p) {
+    if (taskHandleDrawScreen) {
+        vTaskDelete(taskHandleDrawScreen);
+        taskHandleDrawScreen = NULL;
+    }
+    if (taskHandleSleep) {
+        vTaskDelete(taskHandleSleep);
+        taskHandleSleep = NULL;
+    }
+
+    PowerBankData data;
+    std::memcpy((void*)&data, (void*)&powerBankData, sizeof(PowerBankData)); // data = powerBankData;
+    savePowerBankData(data);
+
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    esp_ota_img_states_t ota_state;
+    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
+        if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
+            if (isConnectedWebsocket) {
+                esp_ota_mark_app_valid_cancel_rollback();
+                app_log("OTA marked as valid.");
+            }
+            else {
+                app_log("OTA pending verify. Not mark as valid because not connected websocket.");
+            }
+        }
+        else {
+            app_log("OTA state: " + String(ota_state));
+        }
+    }
+
+
+    screenManager->playVideo("/videos/turnOff.vd", false);
+    brightness->on();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    if (taskHandleCapacityCalculator) {
+        vTaskDelete(taskHandleCapacityCalculator);
+        taskHandleCapacityCalculator = NULL;
+    }
+    if (taskHandleChargeCycleCalculator) {
+        vTaskDelete(taskHandleChargeCycleCalculator);
+        taskHandleChargeCycleCalculator = NULL;
+    }
     brightness->off();
     ip5356->powerOff();
-    EepromData eepromData = { brightness->getPercent(), chargeCycle, percentCharged, batCapacity };
-    eeprom->write(EEPROM_DATA_ADDR, &eepromData, sizeof(eepromData));
-    delay(500);
+
     app_log("DeepSleep started");
+    vTaskDelay(pdMS_TO_TICKS(50));
     esp_deep_sleep_start();
+}
+
+void sleep() {
+    if (taskHandleGoToSleep) return;
+    xTaskCreatePinnedToCore(goToSleep, "sleep", 4096, NULL, 6, &taskHandleGoToSleep, 0);
 }
 
 void taskSleep(void* p) {
@@ -85,28 +159,34 @@ void taskSleep(void* p) {
 
         }
 
-        uint32_t idleTime = buttonManager.getIdleTime();
-        if (idleTime > 30000) {
-            if (isIsysLow) {
-                if (millis() - timeIsysLowStart > 30000) {
-                    if (!OtaUpdate::isRunning()) {
-                        sleep();
+        if (powerBankData.indexTimeAutoSleep != 0 && screenManager->getMode() != ScreenManager::ModeScreen::PLAY_VIDEO) {
+            uint32_t idleTime = buttonManager.getIdleTime();
+            if (idleTime > sleepValueOptions[powerBankData.indexTimeAutoSleep] * 10000) {
+                if (isIsysLow) {
+                    if (millis() - timeIsysLowStart > sleepValueOptions[powerBankData.indexTimeAutoSleep] * 10000) {
+                        if (!OtaUpdate::isRunning()) {
+                            sleep();
+                        }
                     }
                 }
-            }
-            else if (ip5356->getChargeStatus() == IP5356::CHARGE_STATUS::FULLY_CHARGED) {
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                if (ip5356->getChargeStatus() == IP5356::CHARGE_STATUS::FULLY_CHARGED) {
-                    esp_sleep_enable_ext1_wakeup(BITMASK_DEEPSLEEP, ESP_EXT1_WAKEUP_ALL_LOW);
-                    ip5356->isysLowAutoOff(true);
-                    ip5356->set8sAutoOff();
-                    sleep();
+                else if (ip5356->getChargeStatus() == IP5356::CHARGE_STATUS::FULLY_CHARGED) {
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    if (ip5356->getChargeStatus() == IP5356::CHARGE_STATUS::FULLY_CHARGED) {
+                        // if (ip5356->getBatteryPercentage() == 100) {
+                        //     esp_sleep_enable_ext1_wakeup(BITMASK_DEEPSLEEP, ESP_EXT1_WAKEUP_ALL_LOW);
+                        //     ip5356->isysLowAutoOff(true);
+                        //     ip5356->set8sAutoOff();
+                        //     sleep();
+                        // }
+                    }
+                }
+                if (powerBankData.onLowBright) {
+                    brightness->lowBrightness();
                 }
             }
-            brightness->lowBrightness();
-        }
-        else if (idleTime > 20000) {
-            brightness->lowBrightness();
+            else if (powerBankData.onLowBright && idleTime > sleepValueOptions[powerBankData.indexTimeAutoSleep] * 10000 - 10000) {
+                brightness->lowBrightness();
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
@@ -124,7 +204,7 @@ void taskWifi(void* p) {
         app_log(".", "");
     }
     app_log("");
-    delay(500);
+    delay(100);
     app_log("Wifi connected!");
     app_log_i("IP Address: " + WiFi.localIP().toString());
     app_log_i("RSSI: " + String(WiFi.RSSI()) + " dBm");
@@ -137,9 +217,92 @@ void taskWifi(void* p) {
     app_log_i((String)"Mode: " + (WiFi.getMode() == WIFI_MODE_STA ? "STA" : (
         WiFi.getMode() == WIFI_MODE_AP ? "AP" : "STA+AP")));
     app_log_i((String)"Status: " + (WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected"));
-    xTaskCreatePinnedToCore(webSocketTask, "WebSocketTask", 8192, NULL, 1, NULL, 1);
+
+    xTaskCreatePinnedToCore(webSocketTask, "WebSocketTask", 8192, NULL, 1, &taskHandleWebsocket, 0);
+    taskHandleWifi = NULL;
     vTaskDelete(NULL);
 }
+
+void taskCapacityCalculator(void* p) {
+    uint32_t oldTime = millis() - 1000;
+    float value;
+
+    while (true) {
+        uint32_t interval = millis() - oldTime;
+        oldTime = millis();
+
+        value = (ip5356->getBatteryCurrent() * interval) / 3600000.0f;
+
+        IP5356::CHARGE_STATUS state = ip5356->getChargeStatus();
+        if (state == IP5356::CHARGE_STATUS::NOT_CHARGING) {
+            powerBankData.batCapacity -= value;
+        }
+        else if (state == IP5356::CHARGE_STATUS::FULLY_CHARGED) {
+            //
+        }
+        else {
+            powerBankData.batCapacity += value;
+        }
+
+        powerBankData.batCapacity -= interval * 100.0f / 3600000.0f; // average current consumption of esp32 and ip5356
+
+        if (powerBankData.batCapacity > 10000) powerBankData.batCapacity = 10000;
+        else if (powerBankData.batCapacity < 0) powerBankData.batCapacity = 0;
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void taskChargeCycleCalculator(void* p) {
+    uint8_t curentPercent = ip5356->getBatteryPercentage();
+    while (curentPercent > 100) {
+        curentPercent = ip5356->getBatteryPercentage();
+    }
+    uint8_t oldPercent = curentPercent;
+
+    File fileLog = LittleFS.open("/logs/charge.log", "a", true);
+    String logStr = "time,current,capacity,voltage,percent,status\n" + String(millis() / 1000) + "," + String(ip5356->getBatteryCurrent(), 0)
+        + "," + String(powerBankData.batCapacity, 0) + "," + String(ip5356->getBatteryVoltage(), 0) + "," + String(curentPercent) + "," + String((uint8_t)ip5356->getChargeStatus()) + "\n";
+
+    if (fileLog) {
+        fileLog.print(logStr);
+        fileLog.close();
+    }
+
+    while (true) {
+        curentPercent = ip5356->getBatteryPercentage();
+        if (curentPercent > oldPercent) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            curentPercent = ip5356->getBatteryPercentage();
+            if (curentPercent > oldPercent) {
+
+                fileLog = LittleFS.open("/logs/charge.log", "a", true);
+                String logStr = String(millis() / 1000) + "," + String(ip5356->getBatteryCurrent(), 0) + "," + String(powerBankData.batCapacity, 0) + ","
+                    + String(ip5356->getBatteryVoltage(), 0) + "," + String(curentPercent) + "," + String((uint8_t)ip5356->getChargeStatus()) + "\n";
+
+                if (fileLog) {
+                    fileLog.print(logStr);
+                    fileLog.close();
+                }
+
+                oldPercent++;
+                powerBankData.percentCharged++;
+                if (powerBankData.percentCharged >= 100) {
+                    powerBankData.percentCharged = 0;
+                    powerBankData.chargeCycle++;
+                }
+            }
+        }
+        else if (curentPercent < oldPercent) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            curentPercent = ip5356->getBatteryPercentage();
+            if (curentPercent < oldPercent) {
+                oldPercent--;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+
 
 const char* resetReasonToStr(esp_reset_reason_t reason) {
     switch (reason) {
@@ -159,67 +322,6 @@ const char* resetReasonToStr(esp_reset_reason_t reason) {
 }
 
 
-void taskCapacityCalculator(void* p) {
-    uint32_t oldTime = millis();
-    float value;
-
-    while (true) {
-        uint32_t interval = millis() - oldTime;
-        oldTime = millis();
-
-        value = (ip5356->getBatteryCurrent() * interval) / 3600000.0f;
-
-        IP5356::CHARGE_STATUS state = ip5356->getChargeStatus();
-        if (state == IP5356::CHARGE_STATUS::NOT_CHARGING) {
-            batCapacity -= value;
-        }
-        else if (state == IP5356::CHARGE_STATUS::FULLY_CHARGED) {
-            //
-        }
-        else {
-            batCapacity += value;
-        }
-
-        batCapacity -= interval * 100.0f / 3600000.0f; // average current consumption of esp32 and ip5356
-
-        // if (batCapacity > 10000) batCapacity = 10000;
-        // else if (batCapacity < 0) batCapacity = 0;
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-}
-
-void taskChargeCycleCalculator(void* p) {
-    uint8_t curentPercent = ip5356->getBatteryPercentage();
-    while (curentPercent > 100) {
-        curentPercent = ip5356->getBatteryPercentage();
-    }
-    uint8_t oldPercent = curentPercent;
-    while (true) {
-        curentPercent = ip5356->getBatteryPercentage();
-        if (curentPercent > oldPercent) {
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            curentPercent = ip5356->getBatteryPercentage();
-            if (curentPercent > oldPercent) {
-                oldPercent++;
-                percentCharged++;
-                if (percentCharged == 100) {
-                    percentCharged = 0;
-                    chargeCycle++;
-                }
-            }
-        }
-        else if (curentPercent < oldPercent) {
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            curentPercent = ip5356->getBatteryPercentage();
-            if (curentPercent < oldPercent) {
-                oldPercent--;
-            }
-        }
-        vTaskDelay(pdMS_TO_TICKS(2000));
-    }
-}
-
-
 void setup() {
     //#############################################################################
     pinMode(TFT_EN_PIN, OUTPUT);
@@ -235,11 +337,14 @@ void setup() {
     Wire.begin(SDA_I2C_PIN, SCL_I2C_PIN, 200000);
     eeprom = new Eeprom24C(&Wire, 2, 0x50);
 
-    EepromData eepromData;
-    eeprom->read(EEPROM_DATA_ADDR, &eepromData, sizeof(eepromData));
+    PowerBankData data;
+    eeprom->read(EEPROM_DATA_ADDR, &data, sizeof(data));
+
+    std::memcpy((void*)&powerBankData, (void*)&data, sizeof(PowerBankData)); // powerBankData = data;
+
 
     brightness = new Brightness(TFT_BL_PIN, 0);
-    brightness->setPercent(eepromData.brightness);
+    brightness->setPercent(powerBankData.brightness);
     brightness->on();
 
     img = new TFT_eSprite(tft);
@@ -248,12 +353,12 @@ void setup() {
 
     esp_reset_reason_t reason = esp_reset_reason();
     app_log("Reason reset: " + String(resetReasonToStr(reason)));
-    if (reason == ESP_RST_POWERON || 1) {
+    if (reason == ESP_RST_POWERON) {
         pinMode(BUTTON_PIN, INPUT_PULLDOWN);
         if (digitalRead(BUTTON_PIN) == HIGH) {
             app_log("Mode upload firmware start!");
             OtaUpdate::setDisplay(img);
-            xTaskCreatePinnedToCore(taskWifi, "WifiTask", 4096, NULL, 1, NULL, 1);
+            xTaskCreatePinnedToCore(taskWifi, "WifiTask", 4096, NULL, 1, &taskHandleWifi, 0);
             button.attachLongPressStart(esp_restart);
             while (true) {
                 button.tick();
@@ -269,7 +374,7 @@ void setup() {
 
     screenManager = new ScreenManager;
 
-    buttonManager.setActionCallback(([&](Action action) {
+    buttonManager.setActionCallback(([](Action action) {
         if (brightness->getMode() == Brightness::Mode::LOW_BRIGHTNESS) {
             brightness->on();
             return;
@@ -277,27 +382,31 @@ void setup() {
         screenManager->handleButton(action);
         screenManager->setNeedRedraw(true);
 
-        }
-        ));
+        })
+    );
 
-    LittleFS.begin();
+    LittleFS.begin(true);
+    //LittleFS.format();
 
-    batCapacity = eepromData.batCapacity;
-    percentCharged = eepromData.percentCharged;
-    chargeCycle = eepromData.chargeCycle;
+    if (powerBankData.indexTimeAutoSleep >= sleepValueOptions.size()) {
+        powerBankData.indexTimeAutoSleep = 2;
+    }
 
-    xTaskCreatePinnedToCore(taskDrawScreen, "drawScreen", 4096, nullptr, 2, nullptr, 0);
+    xTaskCreatePinnedToCore(taskDrawScreen, "drawScreen", 4096, NULL, 2, &taskHandleDrawScreen, 1);
 
     esp_sleep_enable_ext1_wakeup(BITMASK_DEEPSLEEP, ESP_EXT1_WAKEUP_ANY_HIGH);
-    xTaskCreatePinnedToCore(taskSleep, "SleepTask", 2048, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(taskSleep, "SleepTask", 2048, NULL, 1, &taskHandleSleep, 1);
 
-    xTaskCreatePinnedToCore(taskWifi, "WifiTask", 4096, NULL, 1, NULL, 1);
+    if (powerBankData.onWifi) {
+        xTaskCreatePinnedToCore(taskWifi, "WifiTask", 4096, NULL, 1, &taskHandleWifi, 0);
+    }
 
-    delay(2000);
+    delay(1000);
     ip5356->init();
-
-    xTaskCreatePinnedToCore(taskChargeCycleCalculator, "ChargeCycleCalculator", 2048, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(taskCapacityCalculator, "calCapacity", 2048, NULL, 5, NULL, 0);
+    ip5356->reduceChargeCurrentWhenHot(powerBankData.reduceChargeCurrentWhenHot);
+    xTaskCreatePinnedToCore(taskCapacityCalculator, "calCapacity", 2048, NULL, 5, &taskHandleCapacityCalculator, 1);
+    delay(1000);
+    xTaskCreatePinnedToCore(taskChargeCycleCalculator, "ChargeCycleCalculator", 4096, NULL, 1, &taskHandleChargeCycleCalculator, 1);
 }
 
 void loop() {
@@ -469,8 +578,42 @@ void printInfomation() {
     info += "Reason reset: " + String(resetReasonToStr(reason)) + "\n";
     info += "Size LittleFS: " + String(LittleFS.totalBytes()) + "\n";
     info += "Used LittelFS: " + String(LittleFS.usedBytes()) + "\n";
-
+    info += "IP Address: " + WiFi.localIP().toString() + "\n";
+    info += "RSSI: " + String(WiFi.RSSI()) + " dBm\n";
+    info += "Gateway: " + WiFi.gatewayIP().toString() + "\n";
+    info += ("Subnet: " + WiFi.subnetMask().toString()) + "\n";
+    info += ("Broadcast IP: " + WiFi.softAPBroadcastIP().toString()) + "\n";
+    info += ((String)"Hostname: " + WiFi.getHostname()) + "\n";
+    info += ("MAC Address: " + WiFi.macAddress()) + "\n";
+    info += ("Channel: " + (String)WiFi.channel()) + "\n";
+    info += ((String)"Mode: " + (WiFi.getMode() == WIFI_MODE_STA ? "STA" : (
+        WiFi.getMode() == WIFI_MODE_AP ? "AP" : "STA+AP"))) + "\n";
+    info += ((String)"Status: " + (WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected")) + "\n";
     app_log_i(info);
+}
+
+void listDirRecursive(const char* dirname) {
+    File root = LittleFS.open(dirname);
+    if (!root) {
+        app_log("Failed to open dir: " + String(dirname));
+        return;
+    }
+    if (!root.isDirectory()) {
+        app_log(String(dirname) + "is not a directory");
+        return;
+    }
+
+    File file = root.openNextFile();
+    while (file) {
+        if (file.isDirectory()) {
+            app_log("DIR : " + String(file.name()));
+            listDirRecursive(file.name());
+        }
+        else {
+            app_log("FILE: " + String(file.name()) + "SIZE: " + String(file.size()));
+        }
+        file = root.openNextFile();
+    }
 }
 
 void handleMessage(uint8_t num, uint8_t* payload) {
@@ -495,14 +638,7 @@ void handleMessage(uint8_t num, uint8_t* payload) {
         mainLog.setLogModeWebSockets(&websocket, num);
         app_log("Serial monitor client connected: " + String(num));
 
-        const esp_partition_t* running = esp_ota_get_running_partition();
-        esp_ota_img_states_t ota_state;
-        if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
-            if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
-                esp_ota_mark_app_valid_cancel_rollback();
-                app_log("OTA marked as valid.");
-            }
-        }
+        isConnectedWebsocket = true;
         printInfomation();
     }
     else if (key == "restart") {
@@ -591,8 +727,48 @@ void handleMessage(uint8_t num, uint8_t* payload) {
             read = file.read(buffer, 1024);
             websocket.sendBIN(num, buffer, read);
             readByte += read;
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
         websocket.sendTXT(num, "{\"key\":\"readFileSuccess\"}");
+    }
+    else if (key == "writeFileToLittleFS") {
+        if (!messageJon["name"].is<const char*>()) {
+            app_log_e("Not have \"name\" in json");
+            return;
+        }
+        if (g_uploadInProgress) {
+            app_log_e("Upload already in progress");
+            websocket.sendTXT(num, "{\"key\":\"openFileFailed\"}");
+            return;
+        }
+        String name = messageJon["name"].as<const char*>();
+        g_uploadExpectedSize = messageJon["size"].is<uint32_t>() ? messageJon["size"].as<uint32_t>() : 0;
+        g_uploadFile = LittleFS.open(name, "w", true);
+        if (!g_uploadFile) {
+            app_log_e("Failed to open file for writing: " + name);
+            websocket.sendTXT(num, "{\"key\":\"openFileFailed\"}");
+            return;
+        }
+        g_uploadInProgress = true;
+        g_uploadFailed = false;
+        g_uploadWritten = 0;
+        websocket.sendTXT(num, "{\"key\":\"openFileSuccess\"}");
+    }
+    else if (key == "writeFileToLittleFSEnd") {
+        if (!g_uploadInProgress) {
+            app_log_e("No upload in progress");
+            websocket.sendTXT(num, "{\"key\":\"writeFileFailed\"}");
+            return;
+        }
+        if (g_uploadFile) g_uploadFile.close();
+        bool ok = !g_uploadFailed && (g_uploadExpectedSize == 0 || g_uploadWritten == g_uploadExpectedSize);
+        g_uploadInProgress = false;
+        if (ok) {
+            websocket.sendTXT(num, "{\"key\":\"writeFileSuccess\"}");
+        }
+        else {
+            websocket.sendTXT(num, "{\"key\":\"writeFileFailed\"}");
+        }
     }
     else if (key == "loadAllRegDataIP5356") {
         String str = "IP5356\n";
@@ -605,8 +781,11 @@ void handleMessage(uint8_t num, uint8_t* payload) {
             return;
         }
         float value = messageJon["value"].as<float>();
-        batCapacity = value;
-        app_log("batCapacity: " + String(batCapacity));
+        powerBankData.batCapacity = value;
+        app_log("batCapacity: " + String(powerBankData.batCapacity));
+    }
+    else if(key == "dir"){
+        listDirRecursive("/");
     }
     else if (key == "help") {
         String help =
@@ -636,6 +815,15 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length)
     case WStype_BIN:
         if (OtaUpdate::isRunning()) {
             OtaUpdate::write(payload, length);
+        }
+        else if (g_uploadInProgress && g_uploadFile) {
+            size_t written = g_uploadFile.write(payload, length);
+            if (written != length) {
+                g_uploadFailed = true;
+            }
+            else {
+                g_uploadWritten += written;
+            }
         }
         break;
     case WStype_CONNECTED:

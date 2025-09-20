@@ -15,4 +15,7 @@ lib/OneButton
 lib/TFT_eSPI
 lib/JPEGDEC
 
+*.mp4
+*.bin
+
 test/README

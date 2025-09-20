@@ -272,6 +272,8 @@ public:
 
     void set8sAutoOff();
 
+    void reduceChargeCurrentWhenHot(bool on = false);
+
     /**
      * @brief Read battery information
      */

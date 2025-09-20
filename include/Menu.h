@@ -17,35 +17,23 @@ protected:
     bool _enabled;
 
 public:
-    MenuItem(String title, bool enabled = true) : _title(title), _enabled(enabled) {}
+    MenuItem(String title, bool enabled = true);
 
-    virtual uint8_t draw(bool selected, uint8_t posY = 0) {
-        uint16_t bgColor = selected ? TFT_CYAN : TFT_BLACK;
-        uint16_t textColor = selected ? TFT_BLACK : (_enabled ? TFT_WHITE : TFT_DARKGREY);
-
-        if (selected) {
-            img->fillRect(0, posY - 3, 160, 13, bgColor);
-        }
-
-        img->setTextColor(textColor);
-        img->drawString(_title, 10, posY);
-
-        return posY + 13;
-    }
+    virtual uint8_t draw(bool selected, uint8_t posY = 0);
 
     virtual void onSelect() = 0;
-    virtual void onLeft() {}
-    virtual void onRight() {}
-    virtual void onLongPress() {}
+    virtual void onLeft();
+    virtual void onRight();
+    virtual void onLongPress();
 
-    String getLabel() const { return _title; }
-    bool isEnabled() const { return _enabled; }
-    void setEnabled(bool enabled) { _enabled = enabled; }
+    String getLabel() const;
+    bool isEnabled() const;
+    void setEnabled(bool enabled);
 
-    virtual Menu* asSubmenu() { return nullptr; }
-    virtual bool asBackMenuItem() { return false; }
-    virtual bool hasValue() const { return false; }
-    virtual String getValue() const { return ""; }
+    virtual Menu* asSubmenu();
+    virtual bool asBackMenuItem();
+    virtual bool hasValue() const;
+    virtual String getValue() const;
 
     virtual ~MenuItem() = default;
 };
@@ -56,13 +44,9 @@ private:
     std::function<void()> _action;
 
 public:
-    ActionMenuItem(String title, std::function<void()> action, bool enabled = true)
-        : MenuItem(title, enabled), _action(action) {
-    }
+    ActionMenuItem(String title, std::function<void()> action, bool enabled = true);
 
-    void onSelect() override {
-        if (_enabled && _action) _action();
-    }
+    void onSelect() override;
 };
 
 // Back MenuItem (special action to go back to parent menu)
@@ -71,23 +55,15 @@ private:
     Menu* _targetMenu;
 
 public:
-    BackMenuItem(String title = "Back") : MenuItem(title), _targetMenu(nullptr) {}
+    BackMenuItem(String title = "Back");
 
-    void onSelect() override {
-        // Selection will be handled by MenuManager
-    }
+    void onSelect() override;
 
-    void setTargetMenu(Menu* menu) {
-        _targetMenu = menu;
-    }
+    void setTargetMenu(Menu* menu);
 
-    Menu* getTargetMenu() const {
-        return _targetMenu;
-    }
+    Menu* getTargetMenu() const;
 
-    bool asBackMenuItem() override {
-        return true;
-    }
+    bool asBackMenuItem() override;
 };
 
 // Submenu MenuItem
@@ -96,17 +72,11 @@ private:
     Menu* _submenu;
 
 public:
-    SubmenuMenuItem(String title, Menu* submenu, bool enabled = true)
-        : MenuItem(title, enabled), _submenu(submenu) {
-    }
+    SubmenuMenuItem(String title, Menu* submenu, bool enabled = true);
 
-    void onSelect() override {
-        // Selection is handled by MenuManager
-    }
+    void onSelect() override;
 
-    Menu* asSubmenu() override {
-        return _enabled ? _submenu : nullptr;
-    }
+    Menu* asSubmenu() override;
 };
 
 // Value MenuItem (displays a value, can be editable)
@@ -116,33 +86,16 @@ protected:
     bool _editable;
 
 public:
-    ValueMenuItem(String title, String value, bool editable = false, bool enabled = true)
-        : MenuItem(title, enabled), _value(value), _editable(editable) {
-    }
+    ValueMenuItem(String title, String value, bool editable = false, bool enabled = true);
 
-    uint8_t draw(bool selected, uint8_t posY = 0) override {
-        uint16_t bgColor = selected ? TFT_CYAN : TFT_BLACK;
-        uint16_t textColor = selected ? TFT_BLACK : (_enabled ? TFT_WHITE : TFT_DARKGREY);
+    uint8_t draw(bool selected, uint8_t posY = 0) override;
 
-        if (selected) {
-            img->fillRect(0, posY - 3, 160, 13, bgColor);
-        }
+    void onSelect() override;
 
-        img->setTextColor(textColor);
-        img->drawString(_title, 10, posY);
-        img->drawString(_value, 160 - _value.length() * 6 - 10, posY);
-
-        return posY + 13;
-    }
-
-    void onSelect() override {
-        // Override in derived classes
-    }
-
-    bool hasValue() const override { return true; }
-    String getValue() const override { return _value; }
-    void setValue(String value) { _value = value; }
-    bool isEditable() const { return _editable; }
+    bool hasValue() const override;
+    String getValue() const override;
+    void setValue(String value);
+    bool isEditable() const;
 };
 
 // Selectable MenuItem for single choice from options
@@ -150,184 +103,55 @@ class SelectableMenuItem : public ValueMenuItem {
 private:
     std::vector<String> _options;
     int _selectedIndex;
-    int _eepromAddress;
     std::function<void(int)> _onValueChanged;
     std::function<int(void)> _loadValue;
 
 public:
     SelectableMenuItem(String title, std::vector<String> options, int defaultIndex = 0,
-        int eepromAddress = -1, std::function<void(int)> onChanged = nullptr)
-        : ValueMenuItem(title, options.empty() ? "" : options[defaultIndex], true),
-        _options(options), _selectedIndex(defaultIndex), _eepromAddress(eepromAddress),
-        _onValueChanged(onChanged) {
+        std::function<int(void)> loadValue = nullptr, std::function<void(int)> onChanged = nullptr);
 
-        loadFromEEPROM();
-        updateDisplayValue();
-    }
+    uint8_t draw(bool selected, uint8_t posY = 0) override;
 
-    SelectableMenuItem(String title, std::vector<String> options, int defaultIndex = 0,
-        std::function<int(void)> loadValue = nullptr, std::function<void(int)> onChanged = nullptr)
-        : ValueMenuItem(title, options.empty() ? "" : options[defaultIndex], true),
-        _options(options), _selectedIndex(defaultIndex), _loadValue(loadValue),
-        _onValueChanged(onChanged) {
-        _eepromAddress = -1;
-        loadFromEEPROM();
-        updateDisplayValue();
-    }
+    void onSelect() override;
 
-    uint8_t draw(bool selected, uint8_t posY = 0) override {
-        uint16_t bgColor = selected ? TFT_CYAN : TFT_BLACK;
-        uint16_t textColor = selected ? TFT_BLACK : (_enabled ? TFT_WHITE : TFT_DARKGREY);
+    void onLeft() override;
 
-        if (selected) {
-            img->fillRect(0, posY - 3, 160, 13, bgColor);
-        }
+    void onRight() override;
 
-        img->setTextColor(textColor);
-        img->drawString(_title, 10, posY);
-
-        img->drawString(_value, 160 - _value.length() * 6 - 10, posY);
-
-        return posY + 13;
-    }
-
-    void onSelect() override {
-        // Cycle through options
-        _selectedIndex = (_selectedIndex + 1) % _options.size();
-        updateDisplayValue();
-        saveToEEPROM();
-
-        if (_onValueChanged) {
-            _onValueChanged(_selectedIndex);
-        }
-    }
-
-    void onLeft() override {
-        _selectedIndex = (_selectedIndex - 1 + _options.size()) % _options.size();
-        updateDisplayValue();
-        saveToEEPROM();
-
-        if (_onValueChanged) {
-            _onValueChanged(_selectedIndex);
-        }
-    }
-
-    void onRight() override {
-        _selectedIndex = (_selectedIndex + 1) % _options.size();
-        updateDisplayValue();
-        saveToEEPROM();
-
-        if (_onValueChanged) {
-            _onValueChanged(_selectedIndex);
-        }
-    }
-
-    int getSelectedIndex() const { return _selectedIndex; }
-    String getSelectedOption() const {
-        return (_selectedIndex >= 0 && _selectedIndex < _options.size()) ? _options[_selectedIndex] : "";
-    }
+    int getSelectedIndex() const;
+    String getSelectedOption() const;
 
 private:
-    void updateDisplayValue() {
-        if (_selectedIndex >= 0 && _selectedIndex < _options.size()) {
-            _value = _options[_selectedIndex];
-        }
-    }
+    void updateDisplayValue();
 
-    void saveToEEPROM() {
-        if (_eepromAddress >= 0) {
-            eeprom->write(_eepromAddress, _selectedIndex);
-        }
-    }
-
-    void loadFromEEPROM() {
-        if (_eepromAddress >= 0) {
-            int savedIndex = eeprom->read(_eepromAddress);
-            if (savedIndex >= 0 && savedIndex < _options.size()) {
-                _selectedIndex = savedIndex;
-            }
-        }
-        else if (_loadValue) {
-            int savedIndex = _loadValue();
-            if (savedIndex >= 0 && savedIndex < _options.size()) {
-                _selectedIndex = savedIndex;
-            }
-        }
-    }
+    void loadFromValue();
 };
 
 // Toggle MenuItem (on/off switch)
 class ToggleMenuItem : public ValueMenuItem {
 private:
     bool _state;
-    int _eepromAddress;
     std::function<void(bool)> _onValueChanged;
     std::function<bool(void)> _loadValue;
 
 public:
-    ToggleMenuItem(String title, bool defaultState = false, int eepromAddress = -1,
-        std::function<void(bool)> onChanged = nullptr)
-        : ValueMenuItem(title, defaultState ? "ON" : "OFF", true),
-        _state(defaultState), _eepromAddress(eepromAddress), _onValueChanged(onChanged) {
-
-        loadFromEEPROM();
-        updateDisplayValue();
-    }
-
     ToggleMenuItem(String title, bool defaultState = false,
-        std::function<bool(void)> loadValue = nullptr, std::function<void(int)> onChanged = nullptr)
-        : ValueMenuItem(title, defaultState ? "ON" : "OFF", true),
-        _state(defaultState), _eepromAddress(-1), _onValueChanged(onChanged), _loadValue(loadValue) {
+        std::function<bool(void)> loadValue = nullptr, std::function<void(bool)> onChanged = nullptr);
 
-        loadFromEEPROM();
-        updateDisplayValue();
-    }
+    void onSelect() override;
 
-    void onSelect() override {
-        _state = !_state;
-        updateDisplayValue();
-        saveToEEPROM();
+    uint8_t draw(bool selected, uint8_t posY = 0) override;
 
-        if (_onValueChanged) {
-            _onValueChanged(_state);
-        }
-    }
+    void onLeft() override;
+    void onRight() override;
 
-    uint8_t draw(bool selected, uint8_t posY = 0) override {
-        loadFromEEPROM();
-        updateDisplayValue();
-        return ValueMenuItem::draw(selected, posY);
-    }
-
-    void onLeft() override { onSelect(); }
-    void onRight() override { onSelect(); }
-
-    bool getState() const { return _state; }
-    void setState(bool state) {
-        _state = state;
-        updateDisplayValue();
-        saveToEEPROM();
-    }
+    bool getState() const;
+    void setState(bool state);
 
 private:
-    void updateDisplayValue() {
-        _value = _state ? "ON" : "OFF";
-    }
+    void updateDisplayValue();
 
-    void saveToEEPROM() {
-        if (_eepromAddress >= 0) {
-            eeprom->write(_eepromAddress, _state ? 1 : 0);
-        }
-    }
-
-    void loadFromEEPROM() {
-        if (_eepromAddress >= 0) {
-            _state = eeprom->read(_eepromAddress) != 0;
-        }
-        else if (_loadValue){
-            _state = _loadValue();
-        }
-    }
+    void loadFromValue();
 };
 
 // Numeric MenuItem (for numeric values with increment/decrement)
@@ -335,73 +159,27 @@ class NumericMenuItem : public ValueMenuItem {
 private:
     int _value_int;
     int _minValue, _maxValue, _step;
-    int _eepromAddress;
     std::function<void(int)> _onValueChanged;
+    std::function<int(void)> _loadValue;
 
 public:
     NumericMenuItem(String title, int defaultValue, int minVal, int maxVal, int step = 1,
-        int eepromAddress = -1, std::function<void(int)> onChanged = nullptr)
-        : ValueMenuItem(title, String(defaultValue), true),
-        _value_int(defaultValue), _minValue(minVal), _maxValue(maxVal), _step(step),
-        _eepromAddress(eepromAddress), _onValueChanged(onChanged) {
+        std::function<int(void)> loadValue = nullptr, std::function<void(int)> onChanged = nullptr);
 
-        loadFromEEPROM();
-        updateDisplayValue();
-    }
+    void onSelect() override;
 
-    void onSelect() override {
-        // Could toggle editing mode or cycle through predefined values
-    }
+    void onLeft() override;
 
-    void onLeft() override {
-        _value_int = max(_minValue, _value_int - _step);
-        updateDisplayValue();
-        saveToEEPROM();
+    void onRight() override;
 
-        if (_onValueChanged) {
-            _onValueChanged(_value_int);
-        }
-    }
-
-    void onRight() override {
-        _value_int = min(_maxValue, _value_int + _step);
-        updateDisplayValue();
-        saveToEEPROM();
-
-        if (_onValueChanged) {
-            _onValueChanged(_value_int);
-        }
-    }
-
-    int getNumericValue() const { return _value_int; }
+    int getNumericValue() const;
 
 private:
-    void updateDisplayValue() {
-        _value = String(_value_int);
-    }
+    void updateDisplayValue();
 
-    void saveToEEPROM() {
-        if (_eepromAddress >= 0) {
-            eeprom->write(_eepromAddress, &_value_int, sizeof(_value_int));
-        }
-    }
-
-    void loadFromEEPROM() {
-        if (_eepromAddress >= 0) {
-            eeprom->read(_eepromAddress, &_value_int, sizeof(_value_int));
-            _value_int = constrain(_value_int, _minValue, _maxValue);
-        }
-    }
+    void loadFromValue();
 };
 
-class VideoPlayMenuItem : public MenuItem {
-private:
-
-public:
-
-
-
-};
 
 // Menu class
 class Menu {
@@ -414,113 +192,32 @@ private:
     const uint8_t _visibleMenuItems = 5;
 
 public:
-    Menu(String title, Menu* parent = nullptr) :
-        _title(title), _selectedIndex(0), _scrollOffset(0), _parentMenu(parent) {
-    }
+    Menu(String title, Menu* parent = nullptr);
 
-    ~Menu() {
-        for (auto item : _menuItems) {
-            delete item;
-        }
-    }
+    ~Menu();
 
-    void addMenuItem(MenuItem* item) {
-        _menuItems.push_back(item);
-    }
+    void addMenuItem(MenuItem* item);
 
-    MenuItem* getCurrentMenuItem() const {
-        if (_selectedIndex < _menuItems.size()) {
-            return _menuItems[_selectedIndex];
-        }
-        return nullptr;
-    }
+    MenuItem* getCurrentMenuItem() const;
 
-    void navigateUp() {
-        if (_selectedIndex == 0) {
-            _selectedIndex = _menuItems.size() - 1;
-        }
-        else {
-            _selectedIndex--;
-        }
-        updateScrollOffset();
-    }
+    void navigateUp();
 
-    void navigateDown() {
-        if (_selectedIndex == _menuItems.size() - 1) {
-            _selectedIndex = 0;
-        }
-        else {
-            _selectedIndex++;
-        }
-        updateScrollOffset();
-    }
+    void navigateDown();
 
-    void updateScrollOffset() {
-        if (_selectedIndex < _scrollOffset) {
-            _scrollOffset = _selectedIndex;
-        }
-        else if (_selectedIndex >= _scrollOffset + _visibleMenuItems) {
-            _scrollOffset = _selectedIndex - _visibleMenuItems + 1;
-        }
-    }
+    void updateScrollOffset();
 
-    Menu* selectCurrentMenuItem() {
-        MenuItem* item = getCurrentMenuItem();
-        if (item && item->isEnabled()) {
-            if (item->asBackMenuItem()) {
-                return ((BackMenuItem*)item)->getTargetMenu();
-            }
+    Menu* selectCurrentMenuItem();
 
-            item->onSelect();
-            Menu* submenu = item->asSubmenu();
-            if (submenu) {
-                submenu->setParent(this);
-                return submenu;
-            }
-        }
-        return nullptr;
-    }
+    void handleLeft();
 
-    void handleLeft() {
-        MenuItem* item = getCurrentMenuItem();
-        if (item && item->isEnabled()) {
-            item->onLeft();
-        }
-    }
+    void handleRight();
 
-    void handleRight() {
-        MenuItem* item = getCurrentMenuItem();
-        if (item && item->isEnabled()) {
-            item->onRight();
-        }
-    }
+    void draw();
 
-    void draw() {
-        img->fillSprite(TFT_BLACK);
-        img->setFreeFont();
-        img->setTextColor(TFT_WHITE);
-        img->setTextSize(1);
-
-        // Draw title
-        img->setTextColor(TFT_YELLOW);
-        img->drawString(_title, 5, 0);
-        img->drawLine(0, 12, 160, 12, TFT_WHITE);
-
-        uint8_t startIndex = _scrollOffset;
-        uint8_t endIndex = min((int)_menuItems.size(), startIndex + _visibleMenuItems);
-        uint8_t j = 18;
-
-        for (int i = startIndex; i < endIndex; i++) {
-            j = _menuItems[i]->draw(i == _selectedIndex, j);
-        }
-
-        img->pushSprite(0, 0);
-    }
-
-    Menu* getParent() const { return _parentMenu; }
-    void setParent(Menu* parent) { _parentMenu = parent; }
-    String getTitle() const { return _title; }
-    size_t getItemCount() const { return _menuItems.size(); }
+    Menu* getParent() const;
+    void setParent(Menu* parent);
+    String getTitle() const;
+    size_t getItemCount() const;
 };
 
 

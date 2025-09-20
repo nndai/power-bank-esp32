@@ -302,6 +302,23 @@ bool IP5356::checkIsysLow() {
     return false;
 }
 
+void IP5356::reduceChargeCurrentWhenHot(bool on){
+    uint8_t value;
+    if (!_read(IP5356::NTC_CTL1, &value)) return;
+    if (value & 0b01000000) {
+        if (!on) {
+            value &= 0b10111111;
+            _write(IP5356::NTC_CTL1, &value);
+        }
+    }
+    else {
+        if (on) {
+            value |= 0b01000000;
+            _write(IP5356::NTC_CTL1, &value);
+        }
+    }
+}
+
 uint8_t IP5356::getBatteryPercentage() {
     uint8_t value = -1;
     if (!_read(SOC_CAP_DATA, &value)) return 255;

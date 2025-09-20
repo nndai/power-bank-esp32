@@ -30,7 +30,7 @@ def on_open(ws):
     # Gửi yêu cầu đọc file
     request = {
         "key": "readFileFromLittleFS",
-        "name": "/ip5356_write.log"  # Tên file muốn đọc
+        "name": "/logs/charge.log"  # Tên file muốn đọc
     }
     ws.send(json.dumps(request))
     print("[*] Sent request to read file")
