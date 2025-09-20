@@ -121,7 +121,7 @@ bool VideoPlayer::play() {
     if (_task) return true;
     _stopRequested = false;
     //app_log("Play video start");
-    xTaskCreatePinnedToCore(_taskEntry, "video_task", 4096, this, 1, &_task, 0);
+    xTaskCreatePinnedToCore(_taskEntry, "video_task", 4096, this, 2, &_task, 0);
     return _task != nullptr;
 }
 
