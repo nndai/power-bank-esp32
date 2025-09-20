@@ -139,11 +139,11 @@ extern LoggerManager mainLog;
 #define app_log_w(message, ...) mainLog.warning(message,__FILE__, __LINE__, ##__VA_ARGS__)
 #define app_log(message, ...)   mainLog.logNoLevel(message, __FILE__, __LINE__, ##__VA_ARGS__)
 #else
-#define app_log_i(...)
-#define app_log_e(...)
-#define app_log_d(...)
-#define app_log_w(...)
-#define app_log(...)
+#define app_log_i(...) do {} while(0)
+#define app_log_e(...) do {} while(0)
+#define app_log_d(...) do {} while(0)
+#define app_log_w(...) do {} while(0)
+#define app_log(...) do {} while(0)
 #endif
 
 
