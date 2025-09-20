@@ -172,12 +172,12 @@ void taskSleep(void* p) {
                 else if (ip5356->getChargeStatus() == IP5356::CHARGE_STATUS::FULLY_CHARGED) {
                     vTaskDelay(pdMS_TO_TICKS(1000));
                     if (ip5356->getChargeStatus() == IP5356::CHARGE_STATUS::FULLY_CHARGED) {
-                        // if (ip5356->getBatteryPercentage() == 100) {
-                        //     esp_sleep_enable_ext1_wakeup(BITMASK_DEEPSLEEP, ESP_EXT1_WAKEUP_ALL_LOW);
-                        //     ip5356->isysLowAutoOff(true);
-                        //     ip5356->set8sAutoOff();
-                        //     sleep();
-                        // }
+                        if (ip5356->getBatteryPercentage() == 100) {
+                            esp_sleep_enable_ext1_wakeup(BITMASK_DEEPSLEEP, ESP_EXT1_WAKEUP_ALL_LOW);
+                            ip5356->isysLowAutoOff(true);
+                            ip5356->set8sAutoOff();
+                            sleep();
+                        }
                     }
                 }
                 if (powerBankData.onLowBright) {
@@ -259,14 +259,14 @@ void taskChargeCycleCalculator(void* p) {
     }
     uint8_t oldPercent = curentPercent;
 
-    File fileLog = LittleFS.open("/logs/charge.log", "a", true);
-    String logStr = "time,current,capacity,voltage,percent,status\n" + String(millis() / 1000) + "," + String(ip5356->getBatteryCurrent(), 0)
-        + "," + String(powerBankData.batCapacity, 0) + "," + String(ip5356->getBatteryVoltage(), 0) + "," + String(curentPercent) + "," + String((uint8_t)ip5356->getChargeStatus()) + "\n";
+    // File fileLog = LittleFS.open("/logs/charge.log", "a", true);
+    // String logStr = "time,current,capacity,voltage,percent,status\n" + String(millis() / 1000) + "," + String(ip5356->getBatteryCurrent(), 0)
+    //     + "," + String(powerBankData.batCapacity, 0) + "," + String(ip5356->getBatteryVoltage(), 0) + "," + String(curentPercent) + "," + String((uint8_t)ip5356->getChargeStatus()) + "\n";
 
-    if (fileLog) {
-        fileLog.print(logStr);
-        fileLog.close();
-    }
+    // if (fileLog) {
+    //     fileLog.print(logStr);
+    //     fileLog.close();
+    // }
 
     while (true) {
         curentPercent = ip5356->getBatteryPercentage();
@@ -275,14 +275,14 @@ void taskChargeCycleCalculator(void* p) {
             curentPercent = ip5356->getBatteryPercentage();
             if (curentPercent > oldPercent) {
 
-                fileLog = LittleFS.open("/logs/charge.log", "a", true);
-                String logStr = String(millis() / 1000) + "," + String(ip5356->getBatteryCurrent(), 0) + "," + String(powerBankData.batCapacity, 0) + ","
-                    + String(ip5356->getBatteryVoltage(), 0) + "," + String(curentPercent) + "," + String((uint8_t)ip5356->getChargeStatus()) + "\n";
+                // fileLog = LittleFS.open("/logs/charge.log", "a", true);
+                // String logStr = String(millis() / 1000) + "," + String(ip5356->getBatteryCurrent(), 0) + "," + String(powerBankData.batCapacity, 0) + ","
+                //     + String(ip5356->getBatteryVoltage(), 0) + "," + String(curentPercent) + "," + String((uint8_t)ip5356->getChargeStatus()) + "\n";
 
-                if (fileLog) {
-                    fileLog.print(logStr);
-                    fileLog.close();
-                }
+                // if (fileLog) {
+                //     fileLog.print(logStr);
+                //     fileLog.close();
+                // }
 
                 oldPercent++;
                 powerBankData.percentCharged++;
@@ -392,10 +392,10 @@ void setup() {
         powerBankData.indexTimeAutoSleep = 2;
     }
 
-    xTaskCreatePinnedToCore(taskDrawScreen, "drawScreen", 4096, NULL, 2, &taskHandleDrawScreen, 1);
+    xTaskCreatePinnedToCore(taskDrawScreen, "drawScreen", 4096, NULL, 3, &taskHandleDrawScreen, 1);
 
     esp_sleep_enable_ext1_wakeup(BITMASK_DEEPSLEEP, ESP_EXT1_WAKEUP_ANY_HIGH);
-    xTaskCreatePinnedToCore(taskSleep, "SleepTask", 2048, NULL, 1, &taskHandleSleep, 1);
+    xTaskCreatePinnedToCore(taskSleep, "SleepTask", 2048, NULL, 2, &taskHandleSleep, 1);
 
     if (powerBankData.onWifi) {
         xTaskCreatePinnedToCore(taskWifi, "WifiTask", 4096, NULL, 1, &taskHandleWifi, 0);
@@ -406,7 +406,7 @@ void setup() {
     ip5356->reduceChargeCurrentWhenHot(powerBankData.reduceChargeCurrentWhenHot);
     xTaskCreatePinnedToCore(taskCapacityCalculator, "calCapacity", 2048, NULL, 5, &taskHandleCapacityCalculator, 1);
     delay(1000);
-    xTaskCreatePinnedToCore(taskChargeCycleCalculator, "ChargeCycleCalculator", 4096, NULL, 1, &taskHandleChargeCycleCalculator, 1);
+    xTaskCreatePinnedToCore(taskChargeCycleCalculator, "ChargeCycleCalculator", 4096, NULL, 4, &taskHandleChargeCycleCalculator, 1);
 }
 
 void loop() {
