@@ -71,7 +71,7 @@ void IP5356::init() {
     while (true) {
         isysLowAutoOff(false);
         value = 0;
-        if(!_read(SYS_CTL1, &value)) return;
+        if (!_read(SYS_CTL1, &value)) return;
         if (value & 0b100) {
             delay(10);
             continue;
@@ -88,11 +88,15 @@ void IP5356::init() {
 }
 
 bool IP5356::_read(uint8_t addr, uint8_t reg, uint8_t* data) {
+    if (_intPin != -1) {
+        if (!isWork()) return false;
+    }
+    else if (!isConnected()) return false; // accept if isWork == true then isConnected = true
+
     if (!checkRegRead(addr, reg)) {
         app_log_e("[0x" + String(addr, HEX) + "][0x" + String(reg, HEX) + "]: can not read");
         return false;
     }
-    uint32_t startMillis = micros();
     _i2c->beginTransmission(addr);
     _i2c->write(reg);
     _i2c->endTransmission();
@@ -105,6 +109,11 @@ bool IP5356::_read(uint8_t addr, uint8_t reg, uint8_t* data) {
 }
 
 bool IP5356::_read(uint8_t addr, uint8_t reg, uint16_t* data) {
+    if (_intPin != -1) {
+        if (!isWork()) return false;
+    }
+    else if (!isConnected()) return false; // accept if isWork == true then isConnected = true
+
     if (!checkRegRead(addr, reg)) {
         app_log_e("[0x" + String(addr, HEX) + "][0x" + String(reg, HEX) + "]: can not read");
         return false;
@@ -121,6 +130,17 @@ bool IP5356::_read(uint8_t addr, uint8_t reg, uint16_t* data) {
 }
 
 bool IP5356::_write(uint8_t addr, uint8_t reg, uint8_t* data) {
+    if (_intPin != -1) {
+        if (!isWork()) {
+            app_log_e("write [0x" + String(addr, HEX) + "][0x" + String(reg, HEX) + "] failed");
+            return false;
+        }
+    }
+    else if (!isConnected()) {  // accept if isWork == true then isConnected = true
+        app_log_e("write [0x" + String(addr, HEX) + "][0x" + String(reg, HEX) + "] failed");
+        return false;
+    } 
+
     if (!checkRegWrite(addr, reg)) {
         app_log_e("[0x" + String(addr, HEX) + "][0x" + String(reg, HEX) + "]: can not write");
         return false;
@@ -302,7 +322,7 @@ bool IP5356::checkIsysLow() {
     return false;
 }
 
-void IP5356::reduceChargeCurrentWhenHot(bool on){
+void IP5356::reduceChargeCurrentWhenHot(bool on) {
     uint8_t value;
     if (!_read(IP5356::NTC_CTL1, &value)) return;
     if (value & 0b01000000) {
@@ -540,7 +560,7 @@ void IP5356::resetWholeSystem() {
 
 IP5356::NTC_STATE_FLAG IP5356::getNtcState() {
     uint8_t value = 0;
-    _read(NTC_STATE, &value);
+    if (!_read(NTC_STATE, &value)) return NTC_STATE_FLAG::NORMAL_TEMPERATURE;
     if (value & 0b10000000) {
         return NTC_STATE_FLAG::HIGH_TEMPERATURE;
     }
@@ -617,14 +637,14 @@ IP5356::FAST_CHARGE_PROTOCOL IP5356::getVBUSSourceProtocol() {
 
 IP5356::FAST_CHARGE_PROTOCOL IP5356::getUSB1SourceProtocol() {
     uint8_t value = 0;
-    _read(STATUS_SRC0, &value);
+    if(!_read(STATUS_SRC0, &value)) return FAST_CHARGE_PROTOCOL::NONE;
     value &= 0b1111;
     return convertValueToProtocol(value);
 }
 
 IP5356::FAST_CHARGE_PROTOCOL IP5356::getUSB2SourceProtocol() {
     uint8_t value = 0;
-    _read(STATUS_SRC0, &value);
+    if (!_read(STATUS_SRC0, &value)) return FAST_CHARGE_PROTOCOL::NONE;
     value &= 0b11110000;
     value >>= 4;
     return convertValueToProtocol(value);
@@ -632,7 +652,7 @@ IP5356::FAST_CHARGE_PROTOCOL IP5356::getUSB2SourceProtocol() {
 
 IP5356::PORT_STATE IP5356::getVBUSPortStatus() {
     uint8_t value = 0;
-    _read(TYPEC_STATE, &value);
+    if (!_read(TYPEC_STATE, &value)) return PORT_STATE::NONE;
     uint8_t b7 = value & 0b10000000;
     if (b7) {
         return PORT_STATE::SOURCE;
@@ -647,7 +667,7 @@ IP5356::PORT_STATE IP5356::getVBUSPortStatus() {
 
 IP5356::PORT_STATE IP5356::getUSB2PortStatus() {
     uint8_t value = 0;
-    _read(STATUS_SRC1, &value);
+    if (!_read(STATUS_SRC1, &value))  return PORT_STATE::NONE;
     value &= 0b01110000;
     if (value == 0b00100000) {
         return PORT_STATE::SOURCE;
@@ -657,7 +677,7 @@ IP5356::PORT_STATE IP5356::getUSB2PortStatus() {
 
 IP5356::CHARGE_STATUS IP5356::getChargeStatus() {
     uint8_t value = 0;
-    _read(CHG_STATE2, &value);
+    if (!_read(CHG_STATE2, &value))  return CHARGE_STATUS::NOT_CHARGING;
     if (!(value & 0b1000)) {
         return CHARGE_STATUS::NOT_CHARGING;
     }

@@ -42,21 +42,21 @@ bool VideoPlayer::_readHeader() {
 
 bool VideoPlayer::open(String path) {
     if (!LittleFS.begin(true)) {
-        app_log_e("LittleFS mount failed");
+        _app_log_e("LittleFS mount failed");
         return false;
     }
     _file = LittleFS.open(path, "r");
     if (!_file) {
-        app_log_e("Open file " + path + " error!!!");
+        _app_log_e("Open file " + path + " error!!!");
         return false;
     }
     _path = path;
     if (!_readHeader()) {
-        app_log_e("Bad header");
+        _app_log_e("Bad header");
         _file.close();
         return false;
     }
-    //app_log_i("Read header success");
+    //_app_log_i("Read header success");
     return true;
 }
 
@@ -87,7 +87,7 @@ void VideoPlayer::_taskEntry(void* arg) {
 
             std::vector<uint8_t> frame;
             if (!self->_readFrame(frame)) {
-                app_log_e("Read frame " + String(i) + " failed");
+                _app_log_e("Read frame " + String(i) + " failed");
                 break;
             }
 
@@ -120,8 +120,8 @@ void VideoPlayer::_taskEntry(void* arg) {
 bool VideoPlayer::play() {
     if (_task) return true;
     _stopRequested = false;
-    //app_log("Play video start");
-    xTaskCreatePinnedToCore(_taskEntry, "video_task", 4096, this, 2, &_task, 0);
+    //_app_log_i("Play video start");
+    xTaskCreatePinnedToCore(_taskEntry, "video_task", 4096, this, 2, &_task, 1);
     return _task != nullptr;
 }
 

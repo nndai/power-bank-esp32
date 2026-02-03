@@ -12,7 +12,8 @@ bool Screen::getNeedRedraw() const {
 
 void MainScreen::draw() {
     if (!_needRedraw) return;
-    img->fillSprite(TFT_BACKGROUND_COLOR);
+    //img->fillSprite(TFT_BACKGROUND_COLOR);
+    img->fillRectVGradient(0, 0, 160, 80, 0x3410, TFT_BACKGROUND_COLOR);
     if (!ip5356->isConnected()) {
         img->setTextColor(TFT_RED);
         img->setTextSize(2);
@@ -111,8 +112,8 @@ void MainScreen::handleButton(Action action) {
 
 void InfoScreen::draw() {
     if (!_needRedraw) return;
-    img->fillSprite(TFT_BACKGROUND_COLOR);
-
+    //img->fillSprite(TFT_BACKGROUND_COLOR);
+    img->fillRectVGradient(0, 0, 160, 80, 0x3410, TFT_BACKGROUND_COLOR);
     if (!ip5356->isConnected()) {
         img->setTextColor(TFT_RED);
         img->setTextSize(2);

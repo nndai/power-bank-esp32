@@ -1,13 +1,13 @@
 #include <Arduino.h>
 #include "ButtonManager.h"
-#include <Log.h>
+#include "Globals.h"
 
 ButtonManager* ButtonManager::_instance = nullptr;
 uint64_t ButtonManager::_lastActionTime = millis();
 
 void ButtonManager::handleClick() {
     _lastActionTime = millis();
-    app_log("handleClick");
+    _app_log_i("handleClick");
     if (_instance && _instance->_actionCallback) {
         _instance->_actionCallback(Action::CLICK);
     }
@@ -15,7 +15,7 @@ void ButtonManager::handleClick() {
 
 void ButtonManager::handleDoubleClick() {
     _lastActionTime = millis();
-    app_log("handleDoubleClick");
+    _app_log_i("handleDoubleClick");
     if (_instance && _instance->_actionCallback) {
         _instance->_actionCallback(Action::DOUBLE_CLICK);
     }
@@ -23,7 +23,7 @@ void ButtonManager::handleDoubleClick() {
 
 void ButtonManager::handleLongPressStart() {
     _lastActionTime = millis();
-    app_log("handleLongPressStart");
+    _app_log_i("handleLongPressStart");
     if (_instance && _instance->_actionCallback) {
         _instance->_actionCallback(Action::LONG_PRESS_START);
     }
@@ -31,7 +31,7 @@ void ButtonManager::handleLongPressStart() {
 
 void ButtonManager::handleLongPressStop() {
     _lastActionTime = millis();
-    app_log("handleLongPressStop");
+    _app_log_i("handleLongPressStop");
     if (_instance && _instance->_actionCallback) {
         _instance->_actionCallback(Action::LONG_PRESS_STOP);
     }

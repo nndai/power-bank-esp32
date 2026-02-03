@@ -12,7 +12,6 @@
 #include "Globals.h"
 
 
-
 const char* ssid = "DESKTOP-P5540";
 const char* password = "aaaaaaaa";
 
@@ -61,8 +60,20 @@ void webSocketTask(void* p);
 void app_loginWifiFree(void* p);
 String timeConnectWifiFree();
 
+void _app_log_e(String mess, String end) {
+    if (powerBankData.onWifi) {
+        app_log_e(mess, end);
+    }
+}
+
+void _app_log_i(String mess, String end) {
+    if (powerBankData.onWifi) {
+        app_log_i(mess, end);
+    }
+}
+
 void taskDrawScreen(void* p) {
-    vTaskDelay(pdMS_TO_TICKS(200));
+    //vTaskDelay(pdMS_TO_TICKS(200));
     uint8_t count = 0;
     while (true) {
         buttonManager.tick();
@@ -103,14 +114,14 @@ void goToSleep(void* p) {
         if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
             if (isConnectedWebsocket) {
                 esp_ota_mark_app_valid_cancel_rollback();
-                app_log("OTA marked as valid.");
+                _app_log_i("OTA marked as valid.");
             }
             else {
-                app_log("OTA pending verify. Not mark as valid because not connected websocket.");
+                _app_log_e("OTA pending verify. Not mark as valid because not connected websocket.");
             }
         }
         else {
-            app_log("OTA state: " + String(ota_state));
+            _app_log_i("OTA state: " + String(ota_state));
         }
     }
 
@@ -130,7 +141,7 @@ void goToSleep(void* p) {
     brightness->off();
     ip5356->powerOff();
 
-    app_log("DeepSleep started");
+    _app_log_i("DeepSleep started");
     vTaskDelay(pdMS_TO_TICKS(50));
     esp_deep_sleep_start();
 }
@@ -194,29 +205,29 @@ void taskSleep(void* p) {
 
 void taskWifi(void* p) {
     if (!WiFi.config(localIp, gateway, subnet)) {
-        app_log("STA Failed to configure");
+        _app_log_e("STA Failed to configure");
     }
 
     WiFi.begin(ssid, password);
-    app_log("Dang ket noi toi WiFi", "");
+    _app_log_i("Dang ket noi toi WiFi");
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
-        app_log(".", "");
+        //_app_log_i(".", "");
     }
-    app_log("");
+    _app_log_i("\n");
     delay(100);
-    app_log("Wifi connected!");
-    app_log_i("IP Address: " + WiFi.localIP().toString());
-    app_log_i("RSSI: " + String(WiFi.RSSI()) + " dBm");
-    app_log_i("Gateway: " + WiFi.gatewayIP().toString());
-    app_log_i("Subnet: " + WiFi.subnetMask().toString());
-    app_log_i("Broadcast IP: " + WiFi.softAPBroadcastIP().toString());
-    app_log_i((String)"Hostname: " + WiFi.getHostname());
-    app_log_i("MAC Address: " + WiFi.macAddress());
-    app_log_i("Channel: " + (String)WiFi.channel());
-    app_log_i((String)"Mode: " + (WiFi.getMode() == WIFI_MODE_STA ? "STA" : (
+    _app_log_i("Wifi connected!");
+    _app_log_i("IP Address: " + WiFi.localIP().toString());
+    _app_log_i("RSSI: " + String(WiFi.RSSI()) + " dBm");
+    _app_log_i("Gateway: " + WiFi.gatewayIP().toString());
+    _app_log_i("Subnet: " + WiFi.subnetMask().toString());
+    _app_log_i("Broadcast IP: " + WiFi.softAPBroadcastIP().toString());
+    _app_log_i((String)"Hostname: " + WiFi.getHostname());
+    _app_log_i("MAC Address: " + WiFi.macAddress());
+    _app_log_i("Channel: " + (String)WiFi.channel());
+    _app_log_i((String)"Mode: " + (WiFi.getMode() == WIFI_MODE_STA ? "STA" : (
         WiFi.getMode() == WIFI_MODE_AP ? "AP" : "STA+AP")));
-    app_log_i((String)"Status: " + (WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected"));
+    _app_log_i((String)"Status: " + (WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected"));
 
     xTaskCreatePinnedToCore(webSocketTask, "WebSocketTask", 8192, NULL, 1, &taskHandleWebsocket, 0);
     taskHandleWifi = NULL;
@@ -224,8 +235,14 @@ void taskWifi(void* p) {
 }
 
 void taskCapacityCalculator(void* p) {
-    uint32_t oldTime = millis() - 1000;
+    uint32_t oldTime = millis() - 500;
     float value;
+    if (ip5356->getBatteryVoltage() > 2000 && ip5356->getBatteryPercentage() == 0 && ip5356->getBatteryVoltage() < 3200) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        if (ip5356->getBatteryPercentage() == 0) {
+            powerBankData.batCapacity = 0.0f;
+        }
+    }
 
     while (true) {
         uint32_t interval = millis() - oldTime;
@@ -254,7 +271,7 @@ void taskCapacityCalculator(void* p) {
 
 void taskChargeCycleCalculator(void* p) {
     uint8_t curentPercent = ip5356->getBatteryPercentage();
-    while (curentPercent > 100) {
+    while (ip5356->isWork() && ip5356->isConnected() && curentPercent > 100) {
         curentPercent = ip5356->getBatteryPercentage();
     }
     uint8_t oldPercent = curentPercent;
@@ -304,7 +321,7 @@ void taskChargeCycleCalculator(void* p) {
 }
 
 
-const char* resetReasonToStr(esp_reset_reason_t reason) {
+const char*  resetReasonToStr(esp_reset_reason_t reason) {
     switch (reason) {
     case ESP_RST_UNKNOWN:    return "Không xác định";
     case ESP_RST_POWERON:    return "Reset do cấp nguồn (Power On)";
@@ -352,11 +369,12 @@ void setup() {
     img->setSwapBytes(true);
 
     esp_reset_reason_t reason = esp_reset_reason();
-    app_log("Reason reset: " + String(resetReasonToStr(reason)));
-    if (reason == ESP_RST_POWERON) {
+    _app_log_i("Reason reset: " + String(resetReasonToStr(reason)));
+    if (reason == ESP_RST_POWERON || reason == ESP_RST_PANIC || reason == ESP_RST_TASK_WDT || reason == ESP_RST_INT_WDT ||
+        reason == ESP_RST_WDT || reason == ESP_RST_WDT) {
         pinMode(BUTTON_PIN, INPUT_PULLDOWN);
         if (digitalRead(BUTTON_PIN) == HIGH) {
-            app_log("Mode upload firmware start!");
+            _app_log_i("Mode upload firmware start!");
             OtaUpdate::setDisplay(img);
             xTaskCreatePinnedToCore(taskWifi, "WifiTask", 4096, NULL, 1, &taskHandleWifi, 0);
             button.attachLongPressStart(esp_restart);
@@ -392,11 +410,6 @@ void setup() {
         powerBankData.indexTimeAutoSleep = 2;
     }
 
-    xTaskCreatePinnedToCore(taskDrawScreen, "drawScreen", 4096, NULL, 3, &taskHandleDrawScreen, 1);
-
-    esp_sleep_enable_ext1_wakeup(BITMASK_DEEPSLEEP, ESP_EXT1_WAKEUP_ANY_HIGH);
-    xTaskCreatePinnedToCore(taskSleep, "SleepTask", 2048, NULL, 2, &taskHandleSleep, 1);
-
     if (powerBankData.onWifi) {
         xTaskCreatePinnedToCore(taskWifi, "WifiTask", 4096, NULL, 1, &taskHandleWifi, 0);
     }
@@ -404,6 +417,12 @@ void setup() {
     delay(1000);
     ip5356->init();
     ip5356->reduceChargeCurrentWhenHot(powerBankData.reduceChargeCurrentWhenHot);
+
+    xTaskCreatePinnedToCore(taskDrawScreen, "drawScreen", 4096, NULL, 3, &taskHandleDrawScreen, 1);
+
+    esp_sleep_enable_ext1_wakeup(BITMASK_DEEPSLEEP, ESP_EXT1_WAKEUP_ANY_HIGH);
+    xTaskCreatePinnedToCore(taskSleep, "SleepTask", 2048, NULL, 2, &taskHandleSleep, 1);
+
     xTaskCreatePinnedToCore(taskCapacityCalculator, "calCapacity", 2048, NULL, 5, &taskHandleCapacityCalculator, 1);
     delay(1000);
     xTaskCreatePinnedToCore(taskChargeCycleCalculator, "ChargeCycleCalculator", 4096, NULL, 4, &taskHandleChargeCycleCalculator, 1);
@@ -419,7 +438,7 @@ void loop() {
 
 
     // if (!ip5356->isConnected()) {
-    //     app_log_e("IP5356 not connected (maybe sleep)");
+    //     _app_log_e("IP5356 not connected (maybe sleep)");
     //     delay(5000);
     //     return;
     // }
@@ -447,35 +466,35 @@ void loop() {
     // // float vin = ip5356->getVINVoltage();
     // // float iin = ip5356->getVINCurrent();
     // time = millis() - time;
-    // app_log("per: " + String(per));
-    // app_log("vbat: " + String(vbat));
-    // app_log("ibat: " + String(ibat));
-    // app_log("ntc: " + String(ntc));
-    // app_log("vsys: " + String(vsys));
-    // app_log("isys: " + String(isys));
-    // app_log("psys: " + String(psys));
-    // app_log("vout1: " + String(vout1));
-    // app_log("iout1: " + String(iout1));
-    // app_log("vout2: " + String(vout2));
-    // app_log("iout2: " + String(iout2));
-    // app_log("vbus: " + String(vbus));
-    // app_log("ibus: " + String(ibus));
-    // app_log("vbusprotocol: " + String(vbusprotocol));
-    // app_log("vbusPort: " + String(vbusPort));
-    // app_log("vout2protocol: " + String(vout2protocol));
-    // app_log("vout1protocol: " + String(vout1protocol));
-    // app_log("chargeStatus: " + String(chargeStatus));
-    // // app_log("vin: " + String(vin));
-    // // app_log("iin: " + String(iin));
+    // _app_log_i("per: " + String(per));
+    // _app_log_i("vbat: " + String(vbat));
+    // _app_log_i("ibat: " + String(ibat));
+    // _app_log_i("ntc: " + String(ntc));
+    // _app_log_i("vsys: " + String(vsys));
+    // _app_log_i("isys: " + String(isys));
+    // _app_log_i("psys: " + String(psys));
+    // _app_log_i("vout1: " + String(vout1));
+    // _app_log_i("iout1: " + String(iout1));
+    // _app_log_i("vout2: " + String(vout2));
+    // _app_log_i("iout2: " + String(iout2));
+    // _app_log_i("vbus: " + String(vbus));
+    // _app_log_i("ibus: " + String(ibus));
+    // _app_log_i("vbusprotocol: " + String(vbusprotocol));
+    // _app_log_i("vbusPort: " + String(vbusPort));
+    // _app_log_i("vout2protocol: " + String(vout2protocol));
+    // _app_log_i("vout1protocol: " + String(vout1protocol));
+    // _app_log_i("chargeStatus: " + String(chargeStatus));
+    // // _app_log_i("vin: " + String(vin));
+    // // _app_log_i("iin: " + String(iin));
 
-    // app_log("time: " + String(time) + "ms");
-    // //app_log("cpuCore: " + String(xPortGetCoreID())); //1
+    // _app_log_i("time: " + String(time) + "ms");
+    // //_app_log_i("cpuCore: " + String(xPortGetCoreID())); //1
 
     // // String str = "IP5356_0X74_REG:\n";
     // // for (uint8_t reg : IP5356_0X74_REG_ARR) {
     // //     str+=loadDataIP5356(0x74, reg);
     // // }
-    // // app_log(str);
+    // // _app_log_i(str);
 
 
 
@@ -483,7 +502,7 @@ void loop() {
     // // for (uint8_t reg : IP5356_0X75_REG_ARR) {
     // //     str += loadDataIP5356(0x75, reg);
     // // }
-    // // app_log(str);
+    // // _app_log_i(str);
 }
 
 extern "C" bool verifyRollbackLater() {
@@ -522,7 +541,7 @@ bool app_login() {
     app_login.begin("http://" + getIpGateway() + "/app_login");
     String body = "username=awing15-15&password=Awing15-15@2023";
     int res = app_login.POST(body);
-    app_log("Login: " + String(res));
+    _app_log_i("Login: " + String(res));
     app_login.end();
     return res > 0 && res < 400;
 }
@@ -531,7 +550,7 @@ bool app_logout() {
     HTTPClient app_logout;
     app_logout.begin("http://" + getIpGateway() + "/app_logout?");
     int res = app_logout.GET();
-    app_log("Logout: " + String(res));
+    _app_log_i("Logout: " + String(res));
     app_logout.end();
     return res > 0 && res < 400;
 }
@@ -573,7 +592,9 @@ String formatTimestamp(int64_t timestamp, int tzOffsetHours = 7) {
 
 void printInfomation() {
     String info = "Information\n";
+#ifdef BUILD_TIME
     info += "BUILD_TIME: " + formatTimestamp(BUILD_TIME) + "\n";
+#endif
     esp_reset_reason_t reason = esp_reset_reason();
     info += "Reason reset: " + String(resetReasonToStr(reason)) + "\n";
     info += "Size LittleFS: " + String(LittleFS.totalBytes()) + "\n";
@@ -589,28 +610,28 @@ void printInfomation() {
     info += ((String)"Mode: " + (WiFi.getMode() == WIFI_MODE_STA ? "STA" : (
         WiFi.getMode() == WIFI_MODE_AP ? "AP" : "STA+AP"))) + "\n";
     info += ((String)"Status: " + (WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected")) + "\n";
-    app_log_i(info);
+    _app_log_i(info);
 }
 
 void listDirRecursive(const char* dirname) {
     File root = LittleFS.open(dirname);
     if (!root) {
-        app_log("Failed to open dir: " + String(dirname));
+        _app_log_e("Failed to open dir: " + String(dirname));
         return;
     }
     if (!root.isDirectory()) {
-        app_log(String(dirname) + "is not a directory");
+        _app_log_e(String(dirname) + "is not a directory");
         return;
     }
 
     File file = root.openNextFile();
     while (file) {
         if (file.isDirectory()) {
-            app_log("DIR : " + String(file.name()));
+            _app_log_i("DIR : " + String(file.name()));
             listDirRecursive(file.name());
         }
         else {
-            app_log("FILE: " + String(file.name()) + "SIZE: " + String(file.size()));
+            _app_log_i("FILE: " + String(file.name()) + "SIZE: " + String(file.size()));
         }
         file = root.openNextFile();
     }
@@ -620,29 +641,29 @@ void handleMessage(uint8_t num, uint8_t* payload) {
     JsonDocument messageJon;
     DeserializationError error = deserializeJson(messageJon, payload);
     if (error) {
-        app_log_e("Deserialization failed: " + String(error.c_str()));
+        _app_log_e("Deserialization failed: " + String(error.c_str()));
         return;
     }
 
     if (!messageJon["key"].is<const char*>()) {
-        app_log_e("Not have 'key' in message");
+        _app_log_e("Not have 'key' in message");
         return;
     }
     String key = messageJon["key"].as<String>();
-    app_log("Received key: " + key);
+    _app_log_i("Received key: " + key);
 
     if (key == KEY_UPLOAD_FIRMWARE) {
         OtaUpdate::handleCommand(websocket, num, messageJon);
     }
     else if (key == "initSerialMonitor") {
         mainLog.setLogModeWebSockets(&websocket, num);
-        app_log("Serial monitor client connected: " + String(num));
+        _app_log_i("Serial monitor client connected: " + String(num));
 
         isConnectedWebsocket = true;
         printInfomation();
     }
     else if (key == "restart") {
-        app_log_i("Restarting...");
+        _app_log_i("Restarting...");
         vTaskDelay(1000);
         websocket.disconnect();
         websocket.close();
@@ -650,73 +671,73 @@ void handleMessage(uint8_t num, uint8_t* payload) {
     }
     else if (key == "readIP5356") {
         if (!messageJon["addr"].is<uint32_t>()) {
-            app_log_e("Not have \"addr\" in json");
+            _app_log_e("Not have \"addr\" in json");
             return;
         }
         if (!messageJon["reg"].is<uint32_t>()) {
-            app_log_e("Not have \"reg\" in json");
+            _app_log_e("Not have \"reg\" in json");
             return;
         }
         uint32_t addr = messageJon["addr"].as<uint32_t>();
         if (addr != 0x74 && addr != 0x75) {
-            app_log_e("addr incorrect");
+            _app_log_e("addr incorrect");
             return;
         }
         uint32_t reg = messageJon["reg"].as<uint32_t>();
         if (reg > 0xFF) {
-            app_log_e("reg out of range(uint8_t)");
+            _app_log_e("reg out of range(uint8_t)");
             return;
         }
         uint8_t value = 0;
         if (ip5356->_read(addr, reg, &value)) {
-            app_log_i("[0x" + String(addr, HEX) + "][0x" + String(reg, HEX) + "]: " + addPaddingBin8(value));
+            _app_log_i("[0x" + String(addr, HEX) + "][0x" + String(reg, HEX) + "]: " + addPaddingBin8(value));
         }
         else {
-            app_log_e("Can not read ip5356 (maybe sleep)");
+            _app_log_e("Can not read ip5356 (maybe sleep)");
         }
     }
     else if (key == "writeIP5356") {
         if (!messageJon["addr"].is<uint32_t>()) {
-            app_log_e("Not have \"addr\" in json");
+            _app_log_e("Not have \"addr\" in json");
             return;
         }
         if (!messageJon["reg"].is<uint32_t>()) {
-            app_log_e("Not have \"reg\" in json");
+            _app_log_e("Not have \"reg\" in json");
             return;
         }
         if (!messageJon["value"].is<uint32_t>()) {
-            app_log_e("Not have \"value\" in json");
+            _app_log_e("Not have \"value\" in json");
             return;
         }
         uint32_t addr = messageJon["addr"].as<uint32_t>();
         if (addr != 0x74 && addr != 0x75) {
-            app_log_e("addr incorrect");
+            _app_log_e("addr incorrect");
             return;
         }
         uint32_t reg = messageJon["reg"].as<uint32_t>();
         if (reg > 0xFF) {
-            app_log_e("reg out of range(uint8_t)");
+            _app_log_e("reg out of range(uint8_t)");
             return;
         }
         uint32_t value = messageJon["value"].as<uint32_t>();
         if (value > 255) {
-            app_log_e("value out of range(uint8_t)");
+            _app_log_e("value out of range(uint8_t)");
             return;
         }
         uint8_t temp = value;
         if (!ip5356->_write(addr, reg, &temp)) {
-            app_log_e("Can not read ip5356 (maybe sleep)");
+            _app_log_e("Can not read ip5356 (maybe sleep)");
         }
     }
     else if (key == "readFileFromLittleFS") {
         if (!messageJon["name"].is<const char*>()) {
-            app_log_e("Not have \"name\" in json");
+            _app_log_e("Not have \"name\" in json");
             return;
         }
         String name = messageJon["name"].as<const char*>();
         File file = LittleFS.open(name, "r");
         if (!file) {
-            app_log("Failed to open file for writing");
+            _app_log_e("Failed to open file for writing");
             websocket.sendTXT(num, "{\"key\":\"openFileFailed\"}");
             return;
         }
@@ -733,11 +754,11 @@ void handleMessage(uint8_t num, uint8_t* payload) {
     }
     else if (key == "writeFileToLittleFS") {
         if (!messageJon["name"].is<const char*>()) {
-            app_log_e("Not have \"name\" in json");
+            _app_log_e("Not have \"name\" in json");
             return;
         }
         if (g_uploadInProgress) {
-            app_log_e("Upload already in progress");
+            _app_log_e("Upload already in progress");
             websocket.sendTXT(num, "{\"key\":\"openFileFailed\"}");
             return;
         }
@@ -745,7 +766,7 @@ void handleMessage(uint8_t num, uint8_t* payload) {
         g_uploadExpectedSize = messageJon["size"].is<uint32_t>() ? messageJon["size"].as<uint32_t>() : 0;
         g_uploadFile = LittleFS.open(name, "w", true);
         if (!g_uploadFile) {
-            app_log_e("Failed to open file for writing: " + name);
+            _app_log_e("Failed to open file for writing: " + name);
             websocket.sendTXT(num, "{\"key\":\"openFileFailed\"}");
             return;
         }
@@ -756,7 +777,7 @@ void handleMessage(uint8_t num, uint8_t* payload) {
     }
     else if (key == "writeFileToLittleFSEnd") {
         if (!g_uploadInProgress) {
-            app_log_e("No upload in progress");
+            _app_log_e("No upload in progress");
             websocket.sendTXT(num, "{\"key\":\"writeFileFailed\"}");
             return;
         }
@@ -773,18 +794,18 @@ void handleMessage(uint8_t num, uint8_t* payload) {
     else if (key == "loadAllRegDataIP5356") {
         String str = "IP5356\n";
         str += ip5356->loadAllRegData();
-        app_log(str);
+        _app_log_i(str);
     }
     else if (key == "setBatCapacity") {
         if (!messageJon["value"].is<uint32_t>()) {
-            app_log_e("Not have \"value\" in json");
+            _app_log_e("Not have \"value\" in json");
             return;
         }
         float value = messageJon["value"].as<float>();
         powerBankData.batCapacity = value;
-        app_log("batCapacity: " + String(powerBankData.batCapacity));
+        _app_log_i("batCapacity: " + String(powerBankData.batCapacity));
     }
-    else if(key == "dir"){
+    else if (key == "dir") {
         listDirRecursive("/");
     }
     else if (key == "help") {
@@ -798,10 +819,10 @@ void handleMessage(uint8_t num, uint8_t* payload) {
             "6. readFileFromLittleFS: Read a file from LittleFS. Requires 'name'.\n"
             "8. loadAllRegDataIP5356: Load and display all register data from ip5356->\n"
             "7. help: Display this help message.\n";
-        app_log(help);
+        _app_log_i(help);
     }
     else {
-        app_log_e("Unknown key: " + key);
+        _app_log_e("Unknown key: " + key);
     }
 
 }
@@ -809,7 +830,7 @@ void handleMessage(uint8_t num, uint8_t* payload) {
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
     switch (type) {
     case WStype_TEXT:
-        app_log_i("[" + String(num) + "] Received text message: " + String((char*)payload));
+        _app_log_i("[" + String(num) + "] Received text message: " + String((char*)payload));
         handleMessage(num, payload);
         break;
     case WStype_BIN:
@@ -827,16 +848,16 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length)
         }
         break;
     case WStype_CONNECTED:
-        app_log_i("[" + String(num) + "] Connected!");
+        _app_log_i("[" + String(num) + "] Connected!");
         break;
     case WStype_DISCONNECTED:
-        app_log_i("[" + String(num) + "] Disconnected!");
+        _app_log_i("[" + String(num) + "] Disconnected!");
         if (mainLog.getLogMode() != LoggerManager::MODE_WEBSOCKETS) {
             break;
         }
         if (((WebSocketLogger*)mainLog.getLogger())->getIdClientWebSockets() == num) {
             mainLog.setLogModeSerial();
-            app_log("Serial monitor client disconnected");
+            _app_log_i("Serial monitor client disconnected");
         }
         break;
 
@@ -846,7 +867,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length)
 void webSocketTask(void* p) {
     websocket.begin();
     websocket.onEvent(webSocketEvent);
-    app_log("WebSocket task is running");
+    _app_log_i("WebSocket task is running");
     while (true) {
         websocket.loop();
         vTaskDelay(pdMS_TO_TICKS(10));

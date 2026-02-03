@@ -26,7 +26,7 @@ void MenuManager::setupMenus() {
     ));
 
     // _rootMenu->addMenuItem(new ActionMenuItem("WiFi Setup", []() {
-    //     app_log("WiFi setup selected");
+    //     _app_log_i("WiFi setup selected");
     //     }
     // ));
 
@@ -91,7 +91,7 @@ void MenuManager::setupMenus() {
 
     Menu* videosMenu = new Menu("Videos");
     if (!LittleFS.begin(true)) {
-        app_log_e("LittleFS mount failed");
+        _app_log_e("LittleFS mount failed");
     }
     else {
         fs::File dir = LittleFS.open("/videos");
@@ -136,10 +136,10 @@ void MenuManager::setupMenus() {
 
     _rootMenu->addMenuItem(new SubmenuMenuItem("IP5356 Settings", ip5356Setting));
 
-    _rootMenu->addMenuItem(new ActionMenuItem("About", []() {
-        app_log("About selected");
-        }
-    ));
+    // _rootMenu->addMenuItem(new ActionMenuItem("About", []() {
+    //     _app_log_i("About selected");
+    //     }
+    // ));
 
     _rootMenu->addMenuItem(new ActionMenuItem("Back", [this]() {
         if (this->_screenManager) {
@@ -172,33 +172,33 @@ void MenuManager::handleAction(Action action) {
     case Action::CLICK:
         _current->navigateDown();
         draw();
-        app_log("Menu Navigate Down");
+        _app_log_i("Menu Navigate Down");
         break;
 
     case Action::DOUBLE_CLICK:
         _current->navigateUp();
         draw();
-        app_log("Menu Navigate Up");
+        _app_log_i("Menu Navigate Up");
         break;
 
     case Action::LONG_PRESS_START: {
         Menu* submenu = _current->selectCurrentMenuItem();
         if (submenu) setCurrentMenu(submenu);
         draw();
-        app_log("Menu Select/Enter");
+        _app_log_i("Menu Select/Enter");
         break;
     }
 
     case Action::LEFT:
         _current->handleLeft();
         draw();
-        app_log("Menu Left");
+        _app_log_i("Menu Left");
         break;
 
     case Action::RIGHT:
         _current->handleRight();
         draw();
-        app_log("Menu Right");
+        _app_log_i("Menu Right");
         break;
 
     default:
@@ -300,7 +300,7 @@ void ScreenManager::playVideo(String fileName, bool isLoop) {
     }
     ModeScreen temp = _mode;
     _mode = PLAY_VIDEO;
-    //app_log("Play video " + fileName);
+    //_app_log_i("Play video " + fileName);
     if (!_videoPlayer->open(fileName)) {
         _mode == temp;
         _menuManager->draw();

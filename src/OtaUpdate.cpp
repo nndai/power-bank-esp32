@@ -8,7 +8,7 @@ void OtaUpdate::showProgressOnScreen() {
     if (!_img) return;
     static int8_t lastPercent = -1;
     int8_t percent = (Update.size() == 0) ? 0 : (int)((Update.progress() * 100ULL) / (uint64_t)Update.size());
-    if(percent == lastPercent){
+    if (percent == lastPercent) {
         return;
     }
     lastPercent = percent;
@@ -49,7 +49,7 @@ void OtaUpdate::setDisplay(TFT_eSprite* img) {
 
 void OtaUpdate::handleCommand(WebSocketsServer& websocket, const uint8_t& num, const JsonDocument& command) {
     if (!command["cmd"].is<const char*>()) {
-        app_log_e("No 'cmd' in json");
+        _app_log_e("No 'cmd' in json");
         return;
     }
 
@@ -57,17 +57,17 @@ void OtaUpdate::handleCommand(WebSocketsServer& websocket, const uint8_t& num, c
     if (cmd == CMD_UPLOAD_FIRMWARE_START) {
         if (Update.isRunning()) Update.abort();
         if (!command["size"].is<uint32_t>()) {
-            app_log_e("Not 'size' in json");
+            _app_log_e("Not 'size' in json");
             return;
         }
         uint32_t totalSize = command["size"].as<uint32_t>();
 
         if (!Update.begin(totalSize)) {
-            app_log_e("Update begin failed: " + String(Update.errorString()));
+            _app_log_e("Update begin failed: " + String(Update.errorString()));
             websocket.sendTXT(num, "{\"cmd\":\"beginUploadFirmwareFailed\", \"error\":\"" + String(Update.errorString()) + "\"}");
             return;
         }
-        app_log("Firmware upload started, size: " + String(totalSize));
+        _app_log_i("Firmware upload started, size: " + String(totalSize));
         websocket.sendTXT(num, "{\"cmd\":\"beginUploadFirmwareSuccess\"}");
 
         showProgressOnScreen();
@@ -79,7 +79,7 @@ void OtaUpdate::handleCommand(WebSocketsServer& websocket, const uint8_t& num, c
             _img->drawString("OTA UPLOAD FIRMWARE", 24, 8);
         }
         if (Update.end()) {
-            app_log_i("Update successful! -->restarting...");
+            _app_log_i("Update successful! -->restarting...");
             websocket.sendTXT(num, "{\"cmd\":\"uploadFirmwareSuccess\"}");
             if (_img) {
                 _img->setTextColor(TFT_GREEN);
@@ -96,7 +96,7 @@ void OtaUpdate::handleCommand(WebSocketsServer& websocket, const uint8_t& num, c
         }
         else {
             websocket.sendTXT(num, "{\"cmd\":\"uploadFirmwareFailed\", \"error\":\"" + String(Update.errorString()) + "\"}");
-            app_log_e("Update end failed: " + String(Update.errorString()));
+            _app_log_e("Update end failed: " + String(Update.errorString()));
             if (_img) {
                 _img->setTextColor(TFT_RED);
                 _img->drawString("Upload firmware failed", 15, 46);
@@ -105,7 +105,7 @@ void OtaUpdate::handleCommand(WebSocketsServer& websocket, const uint8_t& num, c
         }
     }
     else {
-        app_log_e("Unknown command: " + cmd);
+        _app_log_e("Unknown command: " + cmd);
         websocket.sendTXT(num, "{\"cmd\":\"unknownCommand\"}");
     }
 }
