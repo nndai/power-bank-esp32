@@ -7,9 +7,19 @@
 #include <cstring>
 #include "OtaUpdate.h"
 #include "luffy.h"
+#include "logoAttack.h"
 #include "Manager.h"
 #include "esp_ota_ops.h"
 #include "Globals.h"
+#include "esp_task_wdt.h"
+#include "soc/rtc_wdt.h"
+#include <deque>
+
+#include "Attack/attack.h"
+#include "WifiController/wifi_controller.h"
+#include "WebServer/webserver.h"
+#include "AttackLog/log.h"
+
 
 
 const char* ssid = "DESKTOP-P5540";
@@ -18,9 +28,10 @@ const char* password = "aaaaaaaa";
 std::vector<String> sleepOptions = { "Never", "20s", "30s", "1min", "2min", "5min", "10min" };
 std::vector<uint8_t> sleepValueOptions = { 0, 2, 3, 6, 12, 30, 60 }; // *10 -> second; 0 -> never
 
-volatile PowerBankData powerBankData;
+PowerBankData powerBankData;
 
 bool isConnectedWebsocket = false;
+bool isUploadFirmware = false;
 
 IPAddress localIp(192, 168, 137, 194);
 IPAddress gateway(192, 168, 137, 1);
@@ -104,9 +115,7 @@ void goToSleep(void* p) {
         taskHandleSleep = NULL;
     }
 
-    PowerBankData data;
-    std::memcpy((void*)&data, (void*)&powerBankData, sizeof(PowerBankData)); // data = powerBankData;
-    savePowerBankData(data);
+    savePowerBankData(powerBankData);
 
     const esp_partition_t* running = esp_ota_get_running_partition();
     esp_ota_img_states_t ota_state;
@@ -321,6 +330,201 @@ void taskChargeCycleCalculator(void* p) {
 }
 
 
+void disable_all_watchdogs()
+{
+    // Task WDT
+    esp_task_wdt_deinit();
+    esp_task_wdt_delete(NULL);
+
+    // RTC WDT
+    rtc_wdt_protect_off();
+    rtc_wdt_disable();
+
+// #ifdef ARDUINO
+//     disableCore0WDT();
+//     disableCore1WDT();
+// #endif
+}
+
+void goWifiAttack() {
+    powerBankData.modeAttack = true;
+    savePowerBankData(powerBankData);
+    esp_restart();
+}
+
+// --- Log Viewer Globals ---
+struct LogEntry {
+    String msg;
+    uint16_t color;
+};
+static std::deque<LogEntry> g_log_buffer;
+static int g_scroll_offset = 0; // 0 = at bottom (newest)
+volatile int g_scroll_step_req = 0;
+volatile bool g_scroll_bottom_req = false;
+
+// Constants
+const int MAX_LOG_LINES = 80;
+const int LINE_HEIGHT = 10;
+const int SCREEN_WIDTH = 160;
+const int SCREEN_HEIGHT = 80;
+const int VISIBLE_LINES = SCREEN_HEIGHT / LINE_HEIGHT;
+
+void taskDisplayAttackLogs(void* p) {
+    // Wait for queue to be initialized
+    while (!g_log_queue) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    set_log_enabled(true);
+    set_log_esp_enabled(false);
+
+    img->setTextSize(1);
+    
+    // Initial clear
+    //img->fillSprite(TFT_BLACK);
+    //img->pushSprite(0, 0);
+
+    bool need_redraw = false;
+
+    while (true) {
+        // 1. Process Input Requests
+        if (g_scroll_bottom_req) {
+            if (g_scroll_offset != 0) {
+                g_scroll_offset = 0;
+                need_redraw = true;
+            }
+            g_scroll_bottom_req = false;
+        }
+
+        if (g_scroll_step_req > 0) {
+            g_scroll_offset += g_scroll_step_req;
+            g_scroll_step_req = 0;
+            
+            // Clamp offset
+            // Max offset: buffer.size() - VISIBLE_LINES
+            // If buffer size < VISIBLE_LINES, max offset is 0.
+            int max_offset = 0;
+            if (g_log_buffer.size() > VISIBLE_LINES) {
+                max_offset = g_log_buffer.size() - VISIBLE_LINES;
+            }
+            
+            if (g_scroll_offset > max_offset) {
+                g_scroll_offset = max_offset;
+            }
+            need_redraw = true;
+        }
+
+
+        // 2. Process Logs
+        log_t log;
+        // Use timeout to allow input processing even if no logs
+        if (xQueueReceive(g_log_queue, &log, pdMS_TO_TICKS(50)) == pdTRUE) {
+            String msg = String(log.msg);
+            uint16_t color = TFT_WHITE;
+            
+            switch (log.level) {
+                case ESP_LOG_ERROR: 
+                    color = TFT_RED;
+                    break;
+                case ESP_LOG_WARN:  
+                    color = TFT_YELLOW;
+                    break;
+                case ESP_LOG_INFO:  
+                    color = TFT_GREEN;
+                    break;
+                case ESP_LOG_DEBUG: 
+                    color = TFT_CYAN;
+                    break;
+                case ESP_LOG_VERBOSE: 
+                    color = TFT_LIGHTGREY;
+                    break;
+                default: 
+                    color = TFT_WHITE; 
+                    break;
+            }
+
+            // Just push back
+            g_log_buffer.push_back({msg, color});
+
+            // Handle Circular Buffer
+            if (g_log_buffer.size() > MAX_LOG_LINES) {
+                g_log_buffer.pop_front();
+                // If we popped front, and we are scrolled up, do not shift offset if we want "Lock to bottom" behavior?
+                // Just use same logic as before.
+            } else {
+                 // Buffer growing
+                 if (g_scroll_offset > 0) {
+                     g_scroll_offset++;
+                 }
+            }
+            need_redraw = true;
+        }
+
+        // 3. Draw
+        if (need_redraw) {
+            img->fillSprite(TFT_BLACK);
+            
+            if (!g_log_buffer.empty()) {
+                int total_lines = g_log_buffer.size();
+                int start_line_idx = total_lines - VISIBLE_LINES - g_scroll_offset;
+                
+                if (start_line_idx < 0) start_line_idx = 0;
+                
+                int y = 0;
+                for (int i = 0; i < VISIBLE_LINES; i++) {
+                     int idx = start_line_idx + i;
+                     if (idx < total_lines) {
+                         const LogEntry& entry = g_log_buffer[idx];
+                         img->setTextColor(entry.color, TFT_BLACK); 
+                         img->drawString(entry.msg, 0, y);
+                         y += LINE_HEIGHT;
+                     }
+                }
+                
+                // 4. Scrollbar
+                if (total_lines > VISIBLE_LINES) {
+                    int bar_h = (VISIBLE_LINES * SCREEN_HEIGHT) / total_lines;
+                    if (bar_h < 4) bar_h = 4;
+                    // Position
+                    // Top (Index 0) -> Bar Y = 0?
+                    // Bottom (Index Total) -> Bar Y = Height.
+                    // View Start Index: start_line_idx.
+                    int bar_y = (start_line_idx * SCREEN_HEIGHT) / total_lines;
+                    
+                    img->fillRect(SCREEN_WIDTH - 2, bar_y, 2, bar_h, TFT_WHITE);
+                }
+            }
+            
+            img->pushSprite(0, 0);
+            need_redraw = false;
+        }
+    }
+}
+
+void attackInit() {
+    log_init();
+    disable_all_watchdogs();
+    esp_err_t err = esp_event_loop_create_default();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_ERROR_CHECK(err);
+    }
+
+    xTaskCreatePinnedToCore(taskDisplayAttackLogs, "DisplayAttackLogs", 4096, NULL, 1, NULL, 1);
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    wifictl_mgmt_ap_start();
+    attack_init();
+    webserver_run();
+}
+
+void taskButtonTick(void* p) {
+    while (true) {
+        buttonManager.tick();
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+
 const char*  resetReasonToStr(esp_reset_reason_t reason) {
     switch (reason) {
     case ESP_RST_UNKNOWN:    return "Không xác định";
@@ -348,16 +552,19 @@ void setup() {
     tft->init();
     tft->setRotation(1);
     tft->setSwapBytes(true);
-    tft->pushImage(0, 0, 160, 80, luffy);
+    
     //tft->fillScreen(TFT_DARKCYAN);
 
     Wire.begin(SDA_I2C_PIN, SCL_I2C_PIN, 200000);
     eeprom = new Eeprom24C(&Wire, 2, 0x50);
 
-    PowerBankData data;
-    eeprom->read(EEPROM_DATA_ADDR, &data, sizeof(data));
-
-    std::memcpy((void*)&powerBankData, (void*)&data, sizeof(PowerBankData)); // powerBankData = data;
+    eeprom->read(EEPROM_DATA_ADDR, &powerBankData, sizeof(powerBankData));
+    if(powerBankData.modeAttack){
+        tft->pushImage(0, 0, 160, 80, logoAttack);
+    }
+    else{
+        tft->pushImage(0, 0, 160, 80, luffy);
+    }
 
 
     brightness = new Brightness(TFT_BL_PIN, 0);
@@ -371,10 +578,15 @@ void setup() {
     esp_reset_reason_t reason = esp_reset_reason();
     _app_log_i("Reason reset: " + String(resetReasonToStr(reason)));
     if (reason == ESP_RST_POWERON || reason == ESP_RST_PANIC || reason == ESP_RST_TASK_WDT || reason == ESP_RST_INT_WDT ||
-        reason == ESP_RST_WDT || reason == ESP_RST_WDT) {
+        reason == ESP_RST_WDT || reason == ESP_RST_WDT || powerBankData.modeUpdateFirmware) {
         pinMode(BUTTON_PIN, INPUT_PULLDOWN);
-        if (digitalRead(BUTTON_PIN) == HIGH) {
+        if (digitalRead(BUTTON_PIN) == HIGH || powerBankData.modeUpdateFirmware) {
+            powerBankData.modeUpdateFirmware = false;
+            savePowerBankData(powerBankData);
+
             _app_log_i("Mode upload firmware start!");
+            isUploadFirmware = true;
+
             OtaUpdate::setDisplay(img);
             xTaskCreatePinnedToCore(taskWifi, "WifiTask", 4096, NULL, 1, &taskHandleWifi, 0);
             button.attachLongPressStart(esp_restart);
@@ -385,6 +597,28 @@ void setup() {
         }
     }
     //############################################################################################
+
+    if (powerBankData.modeAttack) {
+        powerBankData.modeAttack = false;
+        savePowerBankData(powerBankData);
+        attackInit();
+        buttonManager.setActionCallback(([](Action action) {
+            if (action == Action::LONG_PRESS_START) {
+                esp_restart();
+            } else if (action == Action::CLICK) {
+                // Scroll up (history)
+                g_scroll_step_req++;
+            } else if (action == Action::DOUBLE_CLICK) {
+                // Scroll to bottom
+                g_scroll_bottom_req = true;
+            }
+            })
+        );
+        xTaskCreatePinnedToCore(taskButtonTick, "ButtonTick", 2048, NULL, 1, NULL, 1);
+        return;
+    }
+
+
 
 
     ip5356 = new IP5356(&Wire, NTC_DIE_PIN, KEY_PIN, INT_PIN);
@@ -414,6 +648,7 @@ void setup() {
         xTaskCreatePinnedToCore(taskWifi, "WifiTask", 4096, NULL, 1, &taskHandleWifi, 0);
     }
 
+
     delay(1000);
     ip5356->init();
     ip5356->reduceChargeCurrentWhenHot(powerBankData.reduceChargeCurrentWhenHot);
@@ -426,6 +661,9 @@ void setup() {
     xTaskCreatePinnedToCore(taskCapacityCalculator, "calCapacity", 2048, NULL, 5, &taskHandleCapacityCalculator, 1);
     delay(1000);
     xTaskCreatePinnedToCore(taskChargeCycleCalculator, "ChargeCycleCalculator", 4096, NULL, 4, &taskHandleChargeCycleCalculator, 1);
+
+
+
 }
 
 void loop() {
@@ -653,6 +891,11 @@ void handleMessage(uint8_t num, uint8_t* payload) {
     _app_log_i("Received key: " + key);
 
     if (key == KEY_UPLOAD_FIRMWARE) {
+        if (isUploadFirmware == false) {
+            _app_log_e("Not in upload firmware mode");
+            websocket.sendTXT(num, "{\"cmd\":\"beginUploadFirmwareFailed\", \"error\":\"Not in upload firmware mode\"}");
+            return;
+        }
         OtaUpdate::handleCommand(websocket, num, messageJon);
     }
     else if (key == "initSerialMonitor") {

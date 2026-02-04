@@ -33,12 +33,14 @@ struct PowerBankData {
     bool onLowBright = true;
     bool reduceChargeCurrentWhenHot = false;
     bool onWifi = true;
+    bool modeAttack = false;
+    bool modeUpdateFirmware = false;
 };
 
 extern std::vector<String> sleepOptions;
 extern std::vector<uint8_t> sleepValueOptions;
 
-extern volatile PowerBankData powerBankData;
+extern PowerBankData powerBankData;
 
 extern IP5356* ip5356;
 extern TFT_eSPI* tft;
@@ -55,5 +57,6 @@ void _app_log_i(String mess, String end = "\n");
 
 void savePowerBankData(PowerBankData data);
 void sleep();
+void goWifiAttack();
 
 #endif //GLOBALS_H

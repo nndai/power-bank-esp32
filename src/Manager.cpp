@@ -25,6 +25,11 @@ void MenuManager::setupMenus() {
         }
     ));
 
+    _rootMenu->addMenuItem(new ActionMenuItem("WiFi Attacks", []() {
+        goWifiAttack();
+        }
+    ));
+
     // _rootMenu->addMenuItem(new ActionMenuItem("WiFi Setup", []() {
     //     _app_log_i("WiFi setup selected");
     //     }
@@ -36,6 +41,25 @@ void MenuManager::setupMenus() {
 
     std::vector<String> brightnessOptions = { "10%", "20%", "30%", "40%", "50%",
                                               "60%", "70%", "80%", "90%", "100%" };
+
+    settingsMenu->addMenuItem(new ToggleMenuItem(
+        "Reduce I when hot", false,
+        []()->bool {
+            uint8_t value;
+            if (!ip5356->_read(IP5356::NTC_CTL1, &value)) return false;
+            if (value & 0b01000000) {
+                powerBankData.reduceChargeCurrentWhenHot = true;
+                return true;
+            }
+            powerBankData.reduceChargeCurrentWhenHot = false;
+            return false;
+        },
+        [](bool state) {
+            powerBankData.reduceChargeCurrentWhenHot = state;
+            ip5356->reduceChargeCurrentWhenHot(state);
+        }
+    ));
+
     settingsMenu->addMenuItem(new SelectableMenuItem(
         "Brightness", brightnessOptions, 4,
         []() -> int { return brightness->getPercent() / 10 - 1; },
@@ -113,33 +137,46 @@ void MenuManager::setupMenus() {
     _rootMenu->addMenuItem(new SubmenuMenuItem("Play Gif", videosMenu));
 
 
-    Menu* ip5356Setting = new Menu("IP5356 Settings");
-    ip5356Setting->addMenuItem(new ToggleMenuItem(
-        "Reduce I when hot", false,
-        []()->bool {
-            uint8_t value;
-            if (!ip5356->_read(IP5356::NTC_CTL1, &value)) return false;
-            if (value & 0b01000000) {
-                powerBankData.reduceChargeCurrentWhenHot = true;
-                return true;
-            }
-            powerBankData.reduceChargeCurrentWhenHot = false;
-            return false;
-        },
-        [](bool state) {
-            powerBankData.reduceChargeCurrentWhenHot = state;
-            ip5356->reduceChargeCurrentWhenHot(state);
-        }
-    ));
+    // Menu* ip5356Setting = new Menu("IP5356 Settings");
+    // ip5356Setting->addMenuItem(new ToggleMenuItem(
+    //     "Reduce I when hot", false,
+    //     []()->bool {
+    //         uint8_t value;
+    //         if (!ip5356->_read(IP5356::NTC_CTL1, &value)) return false;
+    //         if (value & 0b01000000) {
+    //             powerBankData.reduceChargeCurrentWhenHot = true;
+    //             return true;
+    //         }
+    //         powerBankData.reduceChargeCurrentWhenHot = false;
+    //         return false;
+    //     },
+    //     [](bool state) {
+    //         powerBankData.reduceChargeCurrentWhenHot = state;
+    //         ip5356->reduceChargeCurrentWhenHot(state);
+    //     }
+    // ));
 
-    ip5356Setting->addMenuItem(backToMain);
+    // ip5356Setting->addMenuItem(backToMain);
 
-    _rootMenu->addMenuItem(new SubmenuMenuItem("IP5356 Settings", ip5356Setting));
+    // _rootMenu->addMenuItem(new SubmenuMenuItem("IP5356 Settings", ip5356Setting));
 
     // _rootMenu->addMenuItem(new ActionMenuItem("About", []() {
     //     _app_log_i("About selected");
     //     }
     // ));
+
+    _rootMenu->addMenuItem(new ActionMenuItem("Upload Firmware", []() {
+        powerBankData.modeUpdateFirmware = true;
+        savePowerBankData(powerBankData);
+        ESP.restart();
+        }
+    ));
+
+    _rootMenu->addMenuItem(new ActionMenuItem("Restart", []() {
+        savePowerBankData(powerBankData);
+        ESP.restart();
+        }
+    ));
 
     _rootMenu->addMenuItem(new ActionMenuItem("Back", [this]() {
         if (this->_screenManager) {
