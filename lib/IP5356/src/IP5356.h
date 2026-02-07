@@ -324,6 +324,15 @@ public:
     float getInternalTemperature();
 
     /**
+     * @brief Set battery capacity using FCAP_REG
+     * @param mAh Battery capacity in mAh
+     * @note Formula: FCAP = 385 * N mAH, where N is calculated as round(mAh / 385)
+     *       Also clears bit 7 of EN_FCAP register to activate the setting
+     * @return true if success
+     */
+    bool setBatteryCapacity(uint16_t mAh);
+
+    /**
      * @brief Key press handling
      */
     void shortPressKey();

@@ -474,6 +474,46 @@ float IP5356::getInternalTemperature() {
     return  tempK - 273.15f;
 }
 
+bool IP5356::setBatteryCapacity(uint16_t mAh) {
+    // Calculate N from formula: FCAP = 385 * N mAH
+    // N = round(mAh / 385)
+    uint8_t n = (uint8_t)((mAh + 192) / 385); // Adding 192 (385/2) for rounding
+    
+    // Read current FCAP_REG value and only write if different
+    uint8_t currentN = 0;
+    if (!_read(FCAP_REG, &currentN)) {
+        app_log_e("setBatteryCapacity: Failed to read FCAP_REG");
+        return false;
+    }
+    
+    if (currentN != n) {
+        if (!_write(FCAP_REG, &n)) {
+            app_log_e("setBatteryCapacity: Failed to write FCAP_REG");
+            return false;
+        }
+        app_log("setBatteryCapacity: FCAP_REG changed from " + String(currentN) + " to " + String(n));
+    }
+    
+    // Read EN_FCAP and clear bit 7 only if it's set
+    uint8_t enFcapValue = 0;
+    if (!_read(EN_FCAP, &enFcapValue)) {
+        app_log_e("setBatteryCapacity: Failed to read EN_FCAP");
+        return false;
+    }
+    
+    if (enFcapValue & (1 << 7)) { // Only write if bit 7 is set
+        enFcapValue &= ~(1 << 7); // Clear bit 7
+        if (!_write(EN_FCAP, &enFcapValue)) {
+            app_log_e("setBatteryCapacity: Failed to write EN_FCAP");
+            return false;
+        }
+        app_log("setBatteryCapacity: EN_FCAP bit 7 cleared");
+    }
+    
+    app_log("setBatteryCapacity: Capacity set to " + String(n * 385) + " mAh (N=" + String(n) + ")");
+    return true;
+}
+
 void IP5356::deletePressTask() {
     if (_shortPressTaskHandle != NULL) {
         vTaskDelete(_shortPressTaskHandle);
