@@ -14,16 +14,16 @@ void MainScreen::draw() {
     if (!_needRedraw) return;
     //img->fillSprite(TFT_BACKGROUND_COLOR);
     img->fillRectVGradient(0, 0, 160, 80, 0x3410, TFT_BACKGROUND_COLOR);
-    if (!ip5356->isConnected()) {
-        img->setTextColor(TFT_RED);
-        img->setTextSize(2);
-        img->setFreeFont();
-        img->drawString("IP5356 not", 21, 22);
-        img->drawString("connected", 27, 44);
-        img->pushSprite(0, 0);
-        _needRedraw = false;
-        return;
-    }
+    // if (!ip5356->isConnected()) {
+    //     img->setTextColor(TFT_RED);
+    //     img->setTextSize(2);
+    //     img->setFreeFont();
+    //     img->drawString("IP5356 not", 21, 22);
+    //     img->drawString("connected", 27, 44);
+    //     img->pushSprite(0, 0);
+    //     _needRedraw = false;
+    //     return;
+    // }
 
     img->setTextColor(0xFFFF);
     img->setTextSize(5);

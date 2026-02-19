@@ -341,7 +341,7 @@ void IP5356::reduceChargeCurrentWhenHot(bool on) {
 
 uint8_t IP5356::getBatteryPercentage() {
     uint8_t value = -1;
-    if (!_read(SOC_CAP_DATA, &value)) return 255;
+    if (!_read(SOC_CAP_DATA, &value)) return 0;
     return value;
 }
 
