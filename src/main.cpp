@@ -652,7 +652,7 @@ void setup() {
     delay(1000);
     ip5356->init();
     ip5356->reduceChargeCurrentWhenHot(powerBankData.reduceChargeCurrentWhenHot);
-    ip5356->setBatteryCapacity(9500); //mAh
+    ip5356->setBatteryCapacity(9000); //mAh
 
     xTaskCreatePinnedToCore(taskDrawScreen, "drawScreen", 4096, NULL, 3, &taskHandleDrawScreen, 1);
 
