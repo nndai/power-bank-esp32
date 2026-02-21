@@ -2,6 +2,46 @@
 #include "Manager.h"
 #include <LittleFS.h>
 #include "Globals.h"
+#include "LineChart.h"
+#include "ChargeLogger.h"
+
+// Helper: draw a chart from a charge log file column
+static void drawChargeChart(const String& filename, ChargeLogger::Column col,
+                            LineChart::AxisUnit yUnit, uint16_t lineColor) {
+    if (!chargeLogger) return;
+
+    int count = chargeLogger->getEntryCount(filename);
+    if (count < 2) return;
+
+    float* timeData = new float[count];
+    float* yData    = new float[count];
+
+    int n1 = chargeLogger->loadColumn(filename, ChargeLogger::COL_TIME, timeData, count);
+    int n2 = chargeLogger->loadColumn(filename, col, yData, count);
+    int n  = min(n1, n2);
+
+    if (n >= 2) {
+        LineChart chart(img);
+        LineChart::Config cfg;
+        cfg.x = 0;
+        cfg.y = 0;
+        cfg.w = 160;
+        cfg.h = 80;
+        cfg.gridRows = 4;
+        cfg.gridCols = 6;
+        cfg.lineColor = lineColor;
+        cfg.bgColor = TFT_BLACK;
+        cfg.yUnit = yUnit;
+        cfg.xUnit = LineChart::AxisUnit::SECOND;
+        cfg.linearX = true;
+
+        chart.draw(timeData, yData, n, cfg);
+        img->pushSprite(0, 0);
+    }
+
+    delete[] timeData;
+    delete[] yData;
+}
 
 // ---- MenuManager Implementation ----
 MenuManager::MenuManager() : _current(nullptr), _rootMenu(nullptr), _screenManager(nullptr) {
@@ -19,6 +59,73 @@ void MenuManager::setScreenManager(ScreenManager* sm) {
 void MenuManager::setupMenus() {
     _rootMenu = new Menu("Main Menu");
     _current = _rootMenu;
+
+    // --- Charge Data submenu (dynamically populated) ---
+    Menu* chargeDataMenu = new Menu("Charge Data");
+    _rootMenu->addMenuItem(new SubmenuMenuItem("Charge Data", chargeDataMenu));
+
+    // Populate charge data menu each time user enters it
+    // We use an ActionMenuItem as a "Refresh" trigger that rebuilds the list
+    chargeDataMenu->addMenuItem(new ActionMenuItem("Refresh list", [this, chargeDataMenu]() {
+        // Clear existing items (except first "Refresh" and last "Back")
+        // For simplicity, we rebuild the entire menu on demand
+        // Note: Menu items are managed by Menu, so we just add new ones
+
+        if (!chargeLogger) return;
+
+        std::vector<String> files;
+        chargeLogger->listFiles(files);
+
+        if (files.empty()) {
+            img->fillSprite(TFT_BLACK);
+            img->setTextColor(TFT_WHITE);
+            img->drawString("No charge logs", 10, 36);
+            img->pushSprite(0, 0);
+            return;
+        }
+
+        // Create a temporary menu to show file list
+        Menu* fileListMenu = new Menu("Log Files", chargeDataMenu);
+
+        for (size_t i = 0; i < files.size(); i++) {
+            String fname = files[i];
+            // Each file -> submenu with data type options
+            Menu* dataTypeMenu = new Menu(fname, fileListMenu);
+
+            dataTypeMenu->addMenuItem(new ActionMenuItem("Current", [fname]() {
+                drawChargeChart(fname, ChargeLogger::COL_CURRENT,
+                               LineChart::AxisUnit::MILLIAMP, TFT_GREEN);
+            }));
+            dataTypeMenu->addMenuItem(new ActionMenuItem("Capacity", [fname]() {
+                drawChargeChart(fname, ChargeLogger::COL_CAPACITY,
+                               LineChart::AxisUnit::NORMAL, TFT_CYAN);
+            }));
+            dataTypeMenu->addMenuItem(new ActionMenuItem("Voltage", [fname]() {
+                drawChargeChart(fname, ChargeLogger::COL_VOLTAGE,
+                               LineChart::AxisUnit::MILLIVOLT, TFT_YELLOW);
+            }));
+            dataTypeMenu->addMenuItem(new ActionMenuItem("Percent", [fname]() {
+                drawChargeChart(fname, ChargeLogger::COL_PERCENT,
+                               LineChart::AxisUnit::NORMAL, TFT_MAGENTA);
+            }));
+
+            BackMenuItem* backFromDataType = new BackMenuItem();
+            backFromDataType->setTargetMenu(fileListMenu);
+            dataTypeMenu->addMenuItem(backFromDataType);
+
+            fileListMenu->addMenuItem(new SubmenuMenuItem(fname, dataTypeMenu));
+        }
+
+        BackMenuItem* backFromFileList = new BackMenuItem();
+        backFromFileList->setTargetMenu(chargeDataMenu);
+        fileListMenu->addMenuItem(backFromFileList);
+
+        this->setCurrentMenu(fileListMenu);
+    }));
+
+    BackMenuItem* backFromChargeData = new BackMenuItem();
+    backFromChargeData->setTargetMenu(_rootMenu);
+    chargeDataMenu->addMenuItem(backFromChargeData);
 
     _rootMenu->addMenuItem(new ActionMenuItem("Power Off", []() {
         sleep();
@@ -221,7 +328,7 @@ void MenuManager::handleAction(Action action) {
     case Action::LONG_PRESS_START: {
         Menu* submenu = _current->selectCurrentMenuItem();
         if (submenu) setCurrentMenu(submenu);
-        draw();
+        //draw();
         _app_log_i("Menu Select/Enter");
         break;
     }

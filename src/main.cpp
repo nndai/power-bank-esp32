@@ -19,6 +19,7 @@
 #include "WifiController/wifi_controller.h"
 #include "WebServer/webserver.h"
 #include "AttackLog/log.h"
+#include "ChargeLogger.h"
 
 
 
@@ -49,6 +50,7 @@ Brightness* brightness;
 
 IP5356* ip5356;
 Eeprom24C* eeprom;
+ChargeLogger* chargeLogger;
 
 // --- LittleFS upload state ---
 static fs::File g_uploadFile;
@@ -284,31 +286,26 @@ void taskChargeCycleCalculator(void* p) {
         curentPercent = ip5356->getBatteryPercentage();
     }
     uint8_t oldPercent = curentPercent;
-
-    // File fileLog = LittleFS.open("/logs/charge.log", "a", true);
-    // String logStr = "time,current,capacity,voltage,percent,status\n" + String(millis() / 1000) + "," + String(ip5356->getBatteryCurrent(), 0)
-    //     + "," + String(powerBankData.batCapacity, 0) + "," + String(ip5356->getBatteryVoltage(), 0) + "," + String(curentPercent) + "," + String((uint8_t)ip5356->getChargeStatus()) + "\n";
-
-    // if (fileLog) {
-    //     fileLog.print(logStr);
-    //     fileLog.close();
-    // }
+    bool wasCharging = false;
 
     while (true) {
         curentPercent = ip5356->getBatteryPercentage();
+        IP5356::CHARGE_STATUS chargeStatus = ip5356->getChargeStatus();
+        bool isCharging = (chargeStatus != IP5356::CHARGE_STATUS::NOT_CHARGING && chargeStatus != IP5356::CHARGE_STATUS::FULLY_CHARGED);
+
         if (curentPercent > oldPercent) {
             vTaskDelay(pdMS_TO_TICKS(1000));
             curentPercent = ip5356->getBatteryPercentage();
             if (curentPercent > oldPercent) {
-
-                // fileLog = LittleFS.open("/logs/charge.log", "a", true);
-                // String logStr = String(millis() / 1000) + "," + String(ip5356->getBatteryCurrent(), 0) + "," + String(powerBankData.batCapacity, 0) + ","
-                //     + String(ip5356->getBatteryVoltage(), 0) + "," + String(curentPercent) + "," + String((uint8_t)ip5356->getChargeStatus()) + "\n";
-
-                // if (fileLog) {
-                //     fileLog.print(logStr);
-                //     fileLog.close();
-                // }
+                // Log charge data
+                if (chargeLogger) {
+                    chargeLogger->onPercentChanged(
+                        curentPercent,
+                        ip5356->getBatteryCurrent(),
+                        powerBankData.batCapacity,
+                        ip5356->getBatteryVoltage()
+                    );
+                }
 
                 oldPercent++;
                 powerBankData.percentCharged++;
@@ -325,6 +322,15 @@ void taskChargeCycleCalculator(void* p) {
                 oldPercent--;
             }
         }
+
+        // Detect charge stop
+        if (wasCharging && !isCharging) {
+            if (chargeLogger) {
+                chargeLogger->onChargeStop();
+            }
+        }
+        wasCharging = isCharging;
+
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
@@ -661,6 +667,10 @@ void setup() {
 
     xTaskCreatePinnedToCore(taskCapacityCalculator, "calCapacity", 2048, NULL, 5, &taskHandleCapacityCalculator, 1);
     delay(1000);
+
+    chargeLogger = new ChargeLogger();
+    chargeLogger->begin();
+
     xTaskCreatePinnedToCore(taskChargeCycleCalculator, "ChargeCycleCalculator", 4096, NULL, 4, &taskHandleChargeCycleCalculator, 1);
 
 

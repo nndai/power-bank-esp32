@@ -14,7 +14,7 @@ class WebSocketApp(customtkinter.CTk):
         self.title("ESP32 WebSocket Monitor & Uploader")
         self.geometry("800x600")
 
-        #self.websocket_url = "ws://192.168.1.184:81"
+        #self.websocket_url = "ws://192.168.4.184:81"
         self.websocket_url = "ws://192.168.137.194:82"
         self.ws = None
         self.message_queue = queue.Queue()
