@@ -325,7 +325,11 @@ void taskChargeCycleCalculator(void* p) {
 
         // Detect charge stop
         if (wasCharging && !isCharging) {
-            if (chargeLogger) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            IP5356::CHARGE_STATUS chargeStatus = ip5356->getChargeStatus();
+            bool isCharging2 = (chargeStatus != IP5356::CHARGE_STATUS::NOT_CHARGING && chargeStatus != IP5356::CHARGE_STATUS::FULLY_CHARGED);
+
+            if (isCharging2 == isCharging && chargeLogger) {
                 chargeLogger->onChargeStop();
             }
         }
@@ -346,10 +350,10 @@ void disable_all_watchdogs()
     rtc_wdt_protect_off();
     rtc_wdt_disable();
 
-// #ifdef ARDUINO
-//     disableCore0WDT();
-//     disableCore1WDT();
-// #endif
+    // #ifdef ARDUINO
+    //     disableCore0WDT();
+    //     disableCore1WDT();
+    // #endif
 }
 
 void goWifiAttack() {
@@ -385,7 +389,7 @@ void taskDisplayAttackLogs(void* p) {
     set_log_esp_enabled(false);
 
     img->setTextSize(1);
-    
+
     // Initial clear
     //img->fillSprite(TFT_BLACK);
     //img->pushSprite(0, 0);
@@ -405,7 +409,7 @@ void taskDisplayAttackLogs(void* p) {
         if (g_scroll_step_req > 0) {
             g_scroll_offset += g_scroll_step_req;
             g_scroll_step_req = 0;
-            
+
             // Clamp offset
             // Max offset: buffer.size() - VISIBLE_LINES
             // If buffer size < VISIBLE_LINES, max offset is 0.
@@ -413,7 +417,7 @@ void taskDisplayAttackLogs(void* p) {
             if (g_log_buffer.size() > VISIBLE_LINES) {
                 max_offset = g_log_buffer.size() - VISIBLE_LINES;
             }
-            
+
             if (g_scroll_offset > max_offset) {
                 g_scroll_offset = max_offset;
             }
@@ -427,41 +431,42 @@ void taskDisplayAttackLogs(void* p) {
         if (xQueueReceive(g_log_queue, &log, pdMS_TO_TICKS(50)) == pdTRUE) {
             String msg = String(log.msg);
             uint16_t color = TFT_WHITE;
-            
+
             switch (log.level) {
-                case ESP_LOG_ERROR: 
-                    color = TFT_RED;
-                    break;
-                case ESP_LOG_WARN:  
-                    color = TFT_YELLOW;
-                    break;
-                case ESP_LOG_INFO:  
-                    color = TFT_GREEN;
-                    break;
-                case ESP_LOG_DEBUG: 
-                    color = TFT_CYAN;
-                    break;
-                case ESP_LOG_VERBOSE: 
-                    color = TFT_LIGHTGREY;
-                    break;
-                default: 
-                    color = TFT_WHITE; 
-                    break;
+            case ESP_LOG_ERROR:
+                color = TFT_RED;
+                break;
+            case ESP_LOG_WARN:
+                color = TFT_YELLOW;
+                break;
+            case ESP_LOG_INFO:
+                color = TFT_GREEN;
+                break;
+            case ESP_LOG_DEBUG:
+                color = TFT_CYAN;
+                break;
+            case ESP_LOG_VERBOSE:
+                color = TFT_LIGHTGREY;
+                break;
+            default:
+                color = TFT_WHITE;
+                break;
             }
 
             // Just push back
-            g_log_buffer.push_back({msg, color});
+            g_log_buffer.push_back({ msg, color });
 
             // Handle Circular Buffer
             if (g_log_buffer.size() > MAX_LOG_LINES) {
                 g_log_buffer.pop_front();
                 // If we popped front, and we are scrolled up, do not shift offset if we want "Lock to bottom" behavior?
                 // Just use same logic as before.
-            } else {
-                 // Buffer growing
-                 if (g_scroll_offset > 0) {
-                     g_scroll_offset++;
-                 }
+            }
+            else {
+                // Buffer growing
+                if (g_scroll_offset > 0) {
+                    g_scroll_offset++;
+                }
             }
             need_redraw = true;
         }
@@ -469,24 +474,24 @@ void taskDisplayAttackLogs(void* p) {
         // 3. Draw
         if (need_redraw) {
             img->fillSprite(TFT_BLACK);
-            
+
             if (!g_log_buffer.empty()) {
                 int total_lines = g_log_buffer.size();
                 int start_line_idx = total_lines - VISIBLE_LINES - g_scroll_offset;
-                
+
                 if (start_line_idx < 0) start_line_idx = 0;
-                
+
                 int y = 0;
                 for (int i = 0; i < VISIBLE_LINES; i++) {
-                     int idx = start_line_idx + i;
-                     if (idx < total_lines) {
-                         const LogEntry& entry = g_log_buffer[idx];
-                         img->setTextColor(entry.color, TFT_BLACK); 
-                         img->drawString(entry.msg, 0, y);
-                         y += LINE_HEIGHT;
-                     }
+                    int idx = start_line_idx + i;
+                    if (idx < total_lines) {
+                        const LogEntry& entry = g_log_buffer[idx];
+                        img->setTextColor(entry.color, TFT_BLACK);
+                        img->drawString(entry.msg, 0, y);
+                        y += LINE_HEIGHT;
+                    }
                 }
-                
+
                 // 4. Scrollbar
                 if (total_lines > VISIBLE_LINES) {
                     int bar_h = (VISIBLE_LINES * SCREEN_HEIGHT) / total_lines;
@@ -496,11 +501,11 @@ void taskDisplayAttackLogs(void* p) {
                     // Bottom (Index Total) -> Bar Y = Height.
                     // View Start Index: start_line_idx.
                     int bar_y = (start_line_idx * SCREEN_HEIGHT) / total_lines;
-                    
+
                     img->fillRect(SCREEN_WIDTH - 2, bar_y, 2, bar_h, TFT_WHITE);
                 }
             }
-            
+
             img->pushSprite(0, 0);
             need_redraw = false;
         }
@@ -531,7 +536,7 @@ void taskButtonTick(void* p) {
 }
 
 
-const char*  resetReasonToStr(esp_reset_reason_t reason) {
+const char* resetReasonToStr(esp_reset_reason_t reason) {
     switch (reason) {
     case ESP_RST_UNKNOWN:    return "Không xác định";
     case ESP_RST_POWERON:    return "Reset do cấp nguồn (Power On)";
@@ -558,17 +563,17 @@ void setup() {
     tft->init();
     tft->setRotation(1);
     tft->setSwapBytes(true);
-    
+
     //tft->fillScreen(TFT_DARKCYAN);
 
     Wire.begin(SDA_I2C_PIN, SCL_I2C_PIN, 200000);
     eeprom = new Eeprom24C(&Wire, 2, 0x50);
 
     eeprom->read(EEPROM_DATA_ADDR, &powerBankData, sizeof(powerBankData));
-    if(powerBankData.modeAttack){
+    if (powerBankData.modeAttack) {
         tft->pushImage(0, 0, 160, 80, logoAttack);
     }
-    else{
+    else {
         tft->pushImage(0, 0, 160, 80, luffy);
     }
 
@@ -611,10 +616,12 @@ void setup() {
         buttonManager.setActionCallback(([](Action action) {
             if (action == Action::LONG_PRESS_START) {
                 esp_restart();
-            } else if (action == Action::CLICK) {
+            }
+            else if (action == Action::CLICK) {
                 // Scroll up (history)
                 g_scroll_step_req++;
-            } else if (action == Action::DOUBLE_CLICK) {
+            }
+            else if (action == Action::DOUBLE_CLICK) {
                 // Scroll to bottom
                 g_scroll_bottom_req = true;
             }
@@ -863,24 +870,41 @@ void printInfomation() {
 }
 
 void listDirRecursive(const char* dirname) {
-    File root = LittleFS.open(dirname);
+    // normalize base path (remove trailing slash except for root)
+    String base = String(dirname);
+    if (base.length() > 1 && base.endsWith("/")) {
+        base.remove(base.length() - 1);
+    }
+
+    File root = LittleFS.open(base);
     if (!root) {
-        _app_log_e("Failed to open dir: " + String(dirname));
+        _app_log_e("Failed to open dir: " + base);
         return;
     }
     if (!root.isDirectory()) {
-        _app_log_e(String(dirname) + "is not a directory");
+        _app_log_e(base + " is not a directory");
         return;
     }
 
     File file = root.openNextFile();
     while (file) {
-        if (file.isDirectory()) {
-            _app_log_i("DIR : " + String(file.name()));
-            listDirRecursive(file.name());
+        String name = String(file.name());
+        // ensure we always show/operate on a full path starting with '/'
+        String fullPath;
+        if (name.startsWith("/")) {
+            fullPath = name;
         }
         else {
-            _app_log_i("FILE: " + String(file.name()) + "SIZE: " + String(file.size()));
+            // concatenate with base, handling root specially
+            fullPath = (base == "/") ? "/" + name : base + "/" + name;
+        }
+
+        if (file.isDirectory()) {
+            _app_log_i("DIR : " + fullPath);
+            listDirRecursive(fullPath.c_str());
+        }
+        else {
+            _app_log_i("FILE: " + fullPath + " SIZE: " + String(file.size()));
         }
         file = root.openNextFile();
     }

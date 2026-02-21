@@ -62,7 +62,6 @@ void MenuManager::setupMenus() {
 
     // --- Charge Data submenu (dynamically populated) ---
     Menu* chargeDataMenu = new Menu("Charge Data");
-    _rootMenu->addMenuItem(new SubmenuMenuItem("Charge Data", chargeDataMenu));
 
     // Populate charge data menu each time user enters it
     // We use an ActionMenuItem as a "Refresh" trigger that rebuilds the list
@@ -92,19 +91,19 @@ void MenuManager::setupMenus() {
             // Each file -> submenu with data type options
             Menu* dataTypeMenu = new Menu(fname, fileListMenu);
 
-            dataTypeMenu->addMenuItem(new ActionMenuItem("Current", [fname]() {
+            dataTypeMenu->addMenuItem(new ChartMenuItem("Current", [fname]() {
                 drawChargeChart(fname, ChargeLogger::COL_CURRENT,
                                LineChart::AxisUnit::MILLIAMP, TFT_GREEN);
             }));
-            dataTypeMenu->addMenuItem(new ActionMenuItem("Capacity", [fname]() {
+            dataTypeMenu->addMenuItem(new ChartMenuItem("Capacity", [fname]() {
                 drawChargeChart(fname, ChargeLogger::COL_CAPACITY,
                                LineChart::AxisUnit::NORMAL, TFT_CYAN);
             }));
-            dataTypeMenu->addMenuItem(new ActionMenuItem("Voltage", [fname]() {
+            dataTypeMenu->addMenuItem(new ChartMenuItem("Voltage", [fname]() {
                 drawChargeChart(fname, ChargeLogger::COL_VOLTAGE,
                                LineChart::AxisUnit::MILLIVOLT, TFT_YELLOW);
             }));
-            dataTypeMenu->addMenuItem(new ActionMenuItem("Percent", [fname]() {
+            dataTypeMenu->addMenuItem(new ChartMenuItem("Percent", [fname]() {
                 drawChargeChart(fname, ChargeLogger::COL_PERCENT,
                                LineChart::AxisUnit::NORMAL, TFT_MAGENTA);
             }));
@@ -131,6 +130,8 @@ void MenuManager::setupMenus() {
         sleep();
         }
     ));
+
+    _rootMenu->addMenuItem(new SubmenuMenuItem("Charge Data", chargeDataMenu));
 
     _rootMenu->addMenuItem(new ActionMenuItem("WiFi Attacks", []() {
         goWifiAttack();
@@ -326,9 +327,15 @@ void MenuManager::handleAction(Action action) {
         break;
 
     case Action::LONG_PRESS_START: {
+        MenuItem* curItem = _current->getCurrentMenuItem();
         Menu* submenu = _current->selectCurrentMenuItem();
-        if (submenu) setCurrentMenu(submenu);
-        //draw();
+        if (submenu) {
+            setCurrentMenu(submenu);
+        }
+        // Skip redraw if the action renders its own full-screen content (chart)
+        if (!curItem || !curItem->rendersScreen()) {
+            draw();
+        }
         _app_log_i("Menu Select/Enter");
         break;
     }

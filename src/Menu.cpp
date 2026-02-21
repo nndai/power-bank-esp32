@@ -30,6 +30,7 @@ Menu* MenuItem::asSubmenu() { return nullptr; }
 bool MenuItem::asBackMenuItem() { return false; }
 bool MenuItem::hasValue() const { return false; }
 String MenuItem::getValue() const { return ""; }
+bool MenuItem::rendersScreen() const { return false; }
 
 ActionMenuItem::ActionMenuItem(String title, std::function<void()> action, bool enabled)
     : MenuItem(title, enabled), _action(action) {}
@@ -37,6 +38,15 @@ ActionMenuItem::ActionMenuItem(String title, std::function<void()> action, bool 
 void ActionMenuItem::onSelect() {
     if (_enabled && _action) _action();
 }
+
+ChartMenuItem::ChartMenuItem(String title, std::function<void()> action, bool enabled)
+    : MenuItem(title, enabled), _action(action) {}
+
+void ChartMenuItem::onSelect() {
+    if (_enabled && _action) _action();
+}
+
+bool ChartMenuItem::rendersScreen() const { return true; }
 
 BackMenuItem::BackMenuItem(String title) : MenuItem(title), _targetMenu(nullptr) {}
 

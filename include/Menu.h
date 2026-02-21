@@ -34,6 +34,8 @@ public:
     virtual bool asBackMenuItem();
     virtual bool hasValue() const;
     virtual String getValue() const;
+    /** Returns true if onSelect() renders its own full-screen content (e.g., chart). */
+    virtual bool rendersScreen() const;
 
     virtual ~MenuItem() = default;
 };
@@ -47,6 +49,18 @@ public:
     ActionMenuItem(String title, std::function<void()> action, bool enabled = true);
 
     void onSelect() override;
+};
+
+// Chart MenuItem — like ActionMenuItem but signals it renders full-screen content
+class ChartMenuItem : public MenuItem {
+private:
+    std::function<void()> _action;
+
+public:
+    ChartMenuItem(String title, std::function<void()> action, bool enabled = true);
+
+    void onSelect() override;
+    bool rendersScreen() const override;
 };
 
 // Back MenuItem (special action to go back to parent menu)
