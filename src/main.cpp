@@ -329,8 +329,13 @@ void taskChargeCycleCalculator(void* p) {
             IP5356::CHARGE_STATUS chargeStatus = ip5356->getChargeStatus();
             bool isCharging2 = (chargeStatus != IP5356::CHARGE_STATUS::NOT_CHARGING && chargeStatus != IP5356::CHARGE_STATUS::FULLY_CHARGED);
 
-            if (isCharging2 == isCharging && chargeLogger) {
-                chargeLogger->onChargeStop();
+            if (isCharging2 == false) {
+                if (chargeLogger) {
+                    chargeLogger->onChargeStop();
+                }
+            }
+            else {
+                isCharging = true; // still charging
             }
         }
         wasCharging = isCharging;
