@@ -35,6 +35,7 @@ static const uint8_t deauth_frame_default[] = {
  * 
  * @note run C:\Users\???\.platformio\packages\toolchain-xtensa-esp-elf\bin\xtensa-esp32-elf-objcopy.exe 
  *          --weaken-symbol=ieee80211_raw_frame_sanity_check libnet80211.a libnet80211.a
+ *       at C:\Users\???\.platformio\packages\framework-arduinoespressif32\tools\sdk\esp32\lib>
  */
 extern "C" int ieee80211_raw_frame_sanity_check(void* frame, int len) {
     return 0;
