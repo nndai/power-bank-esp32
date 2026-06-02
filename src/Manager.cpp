@@ -138,6 +138,11 @@ void MenuManager::setupMenus() {
         }
     ));
 
+    _rootMenu->addMenuItem(new ActionMenuItem("WiFi Repeater", []() {
+        goWifiRepeater();
+        }
+    ));
+
     // _rootMenu->addMenuItem(new ActionMenuItem("WiFi Setup", []() {
     //     _app_log_i("WiFi setup selected");
     //     }
@@ -453,8 +458,8 @@ void ScreenManager::playVideo(String fileName, bool isLoop) {
     _mode = PLAY_VIDEO;
     //_app_log_i("Play video " + fileName);
     if (!_videoPlayer->open(fileName)) {
-        _mode == temp;
-        _menuManager->draw();
+        _mode = temp;
+        if (_menuManager) _menuManager->draw();
         return;
     }
     _videoPlayer->setLoop(isLoop);

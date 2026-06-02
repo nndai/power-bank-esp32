@@ -36,6 +36,7 @@ struct PowerBankData {
     bool reduceChargeCurrentWhenHot = false;
     bool onWifi = true;
     bool modeAttack = false;
+    bool modeRepeater = false;
     bool modeUpdateFirmware = false;
 };
 
@@ -61,5 +62,6 @@ void _app_log_i(String mess, String end = "\n");
 void savePowerBankData(PowerBankData data);
 void sleep();
 void goWifiAttack();
+void goWifiRepeater();
 
 #endif //GLOBALS_H

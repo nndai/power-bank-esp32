@@ -9,6 +9,7 @@
 #include "luffy.h"
 #include "logoAttack.h"
 #include "Manager.h"
+#include "Repeater/wifi_repeater.h"
 #include "esp_ota_ops.h"
 #include "Globals.h"
 #include "esp_task_wdt.h"
@@ -20,7 +21,7 @@
 #include "WebServer/webserver.h"
 #include "AttackLog/log.h"
 #include "ChargeLogger.h"
-
+#include <Arduino.h>
 
 
 const char* ssid = "DESKTOP-P5540";
@@ -367,6 +368,12 @@ void goWifiAttack() {
     esp_restart();
 }
 
+void goWifiRepeater() {
+    powerBankData.modeRepeater = true;
+    savePowerBankData(powerBankData);
+    esp_restart();
+}
+
 // --- Log Viewer Globals ---
 struct LogEntry {
     String msg;
@@ -636,6 +643,40 @@ void setup() {
         return;
     }
 
+    if (powerBankData.modeRepeater) {
+        powerBankData.modeRepeater = false;
+        savePowerBankData(powerBankData);
+
+        img->fillSprite(TFT_BLACK);
+        img->setTextColor(TFT_CYAN);
+        img->drawString("WiFi Repeater", 30, 30);
+        img->setTextColor(TFT_WHITE);
+        img->drawString("Starting...", 45, 50);
+        img->pushSprite(0, 0);
+
+        repeater_init();
+
+        img->fillSprite(TFT_BLACK);
+        img->setTextColor(TFT_GREEN);
+        img->drawString("WiFi Repeater", 30, 15);
+        img->setTextColor(TFT_WHITE);
+        img->drawString("AP: " + WiFi.softAPSSID(), 5, 35);
+        img->drawString("IP: " + WiFi.softAPIP().toString(), 5, 50);
+        img->setTextColor(TFT_YELLOW);
+        img->drawString("Long press = exit", 15, 65);
+        img->pushSprite(0, 0);
+
+        buttonManager.setActionCallback(([](Action action) {
+            if (action == Action::LONG_PRESS_START) {
+                repeater_stop();
+                esp_restart();
+            }
+            })
+        );
+        xTaskCreatePinnedToCore(taskButtonTick, "ButtonTick", 2048, NULL, 1, NULL, 1);
+        return;
+    }
+
 
 
 
@@ -859,7 +900,7 @@ void printInfomation() {
     esp_reset_reason_t reason = esp_reset_reason();
     info += "Reason reset: " + String(resetReasonToStr(reason)) + "\n";
     info += "Size LittleFS: " + String(LittleFS.totalBytes()) + "\n";
-    info += "Used LittelFS: " + String(LittleFS.usedBytes()) + "\n";
+    info += "Used LittleFS: " + String(LittleFS.usedBytes()) + "\n";
     info += "IP Address: " + WiFi.localIP().toString() + "\n";
     info += "RSSI: " + String(WiFi.RSSI()) + " dBm\n";
     info += "Gateway: " + WiFi.gatewayIP().toString() + "\n";
@@ -1143,7 +1184,8 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length)
             _app_log_i("Serial monitor client disconnected");
         }
         break;
-
+    default:
+        break;
     }
 }
 
