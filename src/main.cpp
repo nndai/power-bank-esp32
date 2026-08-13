@@ -583,37 +583,15 @@ void taskRepeater(void* p) {
     if (img) {
         img->setTextSize(1);
         img->setFreeFont();
-    }
-
-    repeater_set_progress_callback([](int step, const char* msg) {
-        if (!img) return;
         img->fillSprite(TFT_BLACK);
         img->setTextColor(TFT_CYAN);
-        img->drawString("Repeater Init", 30, 5);
-        img->setTextColor(TFT_YELLOW);
-
-        char buf[64];
-        snprintf(buf, sizeof(buf), "Step %d/11", step);
-        img->drawString(buf, 5, 25);
-
+        img->drawString("WiFi Repeater", 30, 20);
         img->setTextColor(TFT_WHITE);
-        img->drawString(msg, 5, 45);
-
-        // Progress bar
-        int barW = (step * 150) / 11;
-        img->drawRect(5, 65, 150, 10, TFT_DARKGREY);
-        img->fillRect(5, 65, barW, 10, step == 11 ? TFT_GREEN : TFT_CYAN);
-
+        img->drawString("Starting...", 45, 45);
         img->pushSprite(0, 0);
-        delay(150);
-    });
+    }
 
     repeater_init();
-
-    // Clear callback after init
-    repeater_set_progress_callback(NULL);
-
-    vTaskDelay(pdMS_TO_TICKS(1500)); // show "DONE!" briefly
 
     img->fillSprite(TFT_BLACK);
     img->setTextColor(TFT_GREEN);

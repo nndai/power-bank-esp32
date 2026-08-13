@@ -23,21 +23,6 @@ static uint32_t boot_time_ms = 0;
 static volatile bool rpt_running = false;
 static DNSServer dnsServer;
 
-// Progress callback for visual debugging
-static repeater_progress_cb_t s_progress_cb = NULL;
-
-static void report_step(int step, const char* msg) {
-    //ESP_LOGI(TAG, "[Step %d] %s", step, msg);
-    if (s_progress_cb) {
-        s_progress_cb(step, msg);
-    }
-    vTaskDelay(pdMS_TO_TICKS(100)); // small delay so screen updates before potential crash
-}
-
-void repeater_set_progress_callback(repeater_progress_cb_t cb) {
-    s_progress_cb = cb;
-}
-
 // Forward declarations
 static void rpt_wifi_event_handler(WiFiEvent_t event, WiFiEventInfo_t info);
 static void rpt_start_ap();
@@ -46,7 +31,6 @@ static void rpt_enable_napt();
 static void rpt_setup_dns_for_ap();
 
 void repeater_init() {
-    report_step(1, "NVS load");
     boot_time_ms = millis();
 
     // Load saved config from NVS
@@ -55,46 +39,32 @@ void repeater_init() {
     ESP_LOGI(TAG, "STA SSID: '%s'", rpt_config.sta_ssid);
     ESP_LOGI(TAG, "AP  SSID: '%s'", rpt_config.ap_ssid);
 
-    report_step(2, "WiFi events");
     // Register WiFi events
     WiFi.onEvent(rpt_wifi_event_handler);
 
-    report_step(3, "WiFi AP_STA mode");
     // Set WiFi mode to AP+STA
     WiFi.mode(WIFI_AP_STA);
 
-    report_step(4, "WiFi PS off");
     esp_wifi_set_ps(WIFI_PS_NONE);
-
-    report_step(5, "AutoReconnect");
     WiFi.setAutoReconnect(true);
 
-    report_step(6, "Start AP");
     // Start AP first
     rpt_start_ap();
-
-    report_step(7, "AP BW HT40");
     esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT40);
 
     // Connect STA if configured
     if (strlen(rpt_config.sta_ssid) > 0) {
-        report_step(8, "Connect STA");
         rpt_connect_sta();
-
-        report_step(9, "STA BW HT40");
         esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT40);
     } else {
-        report_step(8, "No STA config");
         ESP_LOGI(TAG, "No upstream WiFi configured. Use web UI at 192.168.4.1 to configure.");
     }
 
-    report_step(10, "Web server");
     // Start the web server and DNS captive portal server
     rpt_webserver_start(&rpt_config);
     dnsServer.start(53, "*", WiFi.softAPIP());
 
     rpt_running = true;
-    report_step(11, "DONE!");
     ESP_LOGI(TAG, "=== WiFi Repeater Ready ===");
     ESP_LOGI(TAG, "Web UI: http://192.168.4.1");
 }
