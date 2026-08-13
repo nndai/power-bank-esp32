@@ -4,6 +4,19 @@
 #include <Arduino.h>
 
 /**
+ * @brief Progress callback for visual debugging during init.
+ * @param step Step number (1-based)
+ * @param msg Description of the current step
+ */
+typedef void (*repeater_progress_cb_t)(int step, const char* msg);
+
+/**
+ * @brief Set a progress callback for repeater_init().
+ * Called before each step so you can display progress on screen.
+ */
+void repeater_set_progress_callback(repeater_progress_cb_t cb);
+
+/**
  * @brief Initialize the WiFi Repeater.
  * 
  * Loads config from NVS, starts WiFi in STA+AP mode,
@@ -13,6 +26,11 @@
  * when the repeater mode is active.
  */
 void repeater_init();
+
+/**
+ * @brief Process background tasks for repeater (Captive Portal DNS requests)
+ */
+void repeater_tick();
 
 /**
  * @brief Check if the repeater's STA is connected to upstream WiFi

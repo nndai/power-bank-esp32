@@ -272,9 +272,11 @@ static esp_err_t handler_save(httpd_req_t* req) {
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"ok\":true,\"msg\":\"Config saved. Restarting...\"}", HTTPD_RESP_USE_STRLEN);
 
-    // Schedule restart after 1 second (let response complete)
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    esp_restart();
+    // Spawn one-shot background task to restart after response is fully transmitted
+    xTaskCreatePinnedToCore([](void* p) {
+        vTaskDelay(pdMS_TO_TICKS(1500));
+        esp_restart();
+    }, "RptRebootTask", 2048, NULL, 1, NULL, 1);
 
     return ESP_OK;
 }

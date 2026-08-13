@@ -4,6 +4,7 @@
 #include "WebServer/repeater_webserver.h"
 
 #include <WiFi.h>
+#include <DNSServer.h>
 #include <esp_wifi.h>
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -20,6 +21,22 @@ static volatile bool sta_connected = false;
 static volatile uint16_t client_count = 0;
 static uint32_t boot_time_ms = 0;
 static volatile bool rpt_running = false;
+static DNSServer dnsServer;
+
+// Progress callback for visual debugging
+static repeater_progress_cb_t s_progress_cb = NULL;
+
+static void report_step(int step, const char* msg) {
+    //ESP_LOGI(TAG, "[Step %d] %s", step, msg);
+    if (s_progress_cb) {
+        s_progress_cb(step, msg);
+    }
+    vTaskDelay(pdMS_TO_TICKS(100)); // small delay so screen updates before potential crash
+}
+
+void repeater_set_progress_callback(repeater_progress_cb_t cb) {
+    s_progress_cb = cb;
+}
 
 // Forward declarations
 static void rpt_wifi_event_handler(WiFiEvent_t event, WiFiEventInfo_t info);
@@ -29,7 +46,7 @@ static void rpt_enable_napt();
 static void rpt_setup_dns_for_ap();
 
 void repeater_init() {
-    ESP_LOGI(TAG, "=== WiFi Repeater Initializing ===");
+    report_step(1, "NVS load");
     boot_time_ms = millis();
 
     // Load saved config from NVS
@@ -38,38 +55,46 @@ void repeater_init() {
     ESP_LOGI(TAG, "STA SSID: '%s'", rpt_config.sta_ssid);
     ESP_LOGI(TAG, "AP  SSID: '%s'", rpt_config.ap_ssid);
 
+    report_step(2, "WiFi events");
     // Register WiFi events
     WiFi.onEvent(rpt_wifi_event_handler);
 
+    report_step(3, "WiFi AP_STA mode");
     // Set WiFi mode to AP+STA
     WiFi.mode(WIFI_AP_STA);
 
-    // === Critical runtime throughput optimizations ===
-    // 1. Disable WiFi power save (modem sleep) - Arduino enables this by default!
-    //    This alone can cause 10x throughput difference.
+    report_step(4, "WiFi PS off");
     esp_wifi_set_ps(WIFI_PS_NONE);
 
-    // 2. Set WiFi bandwidth to HT40 (40MHz) for maximum throughput
-    //    Default is HT20 (20MHz) which halves max speed
-    esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT40);
-    esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT40);
+    report_step(5, "AutoReconnect");
+    WiFi.setAutoReconnect(true);
 
-    ESP_LOGI(TAG, "WiFi optimized: PS=NONE, BW=HT40");
-
+    report_step(6, "Start AP");
     // Start AP first
     rpt_start_ap();
 
+    report_step(7, "AP BW HT40");
+    esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT40);
+
     // Connect STA if configured
     if (strlen(rpt_config.sta_ssid) > 0) {
+        report_step(8, "Connect STA");
         rpt_connect_sta();
+
+        report_step(9, "STA BW HT40");
+        esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT40);
     } else {
+        report_step(8, "No STA config");
         ESP_LOGI(TAG, "No upstream WiFi configured. Use web UI at 192.168.4.1 to configure.");
     }
 
-    // Start the web server
+    report_step(10, "Web server");
+    // Start the web server and DNS captive portal server
     rpt_webserver_start(&rpt_config);
+    dnsServer.start(53, "*", WiFi.softAPIP());
 
     rpt_running = true;
+    report_step(11, "DONE!");
     ESP_LOGI(TAG, "=== WiFi Repeater Ready ===");
     ESP_LOGI(TAG, "Web UI: http://192.168.4.1");
 }
@@ -149,13 +174,9 @@ static void rpt_wifi_event_handler(WiFiEvent_t event, WiFiEventInfo_t info) {
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             ESP_LOGW(TAG, "STA disconnected from upstream WiFi");
             sta_connected = false;
-
-            // Auto-reconnect if we have config
-            if (rpt_running && strlen(rpt_config.sta_ssid) > 0) {
-                ESP_LOGI(TAG, "Reconnecting in %d ms...", RPT_RECONNECT_DELAY_MS);
-                delay(RPT_RECONNECT_DELAY_MS);
-                WiFi.begin(rpt_config.sta_ssid, rpt_config.sta_pass);
-            }
+            // Auto-reconnect is handled by WiFi.setAutoReconnect(true)
+            // Do NOT call delay() or WiFi.begin() here — this runs in the WiFi task
+            // context with a small stack, and blocking will trigger Task Watchdog panic.
             break;
 
         case ARDUINO_EVENT_WIFI_AP_STACONNECTED: {
@@ -196,8 +217,15 @@ uint32_t repeater_get_uptime_seconds() {
     return (millis() - boot_time_ms) / 1000;
 }
 
+void repeater_tick() {
+    if (rpt_running) {
+        dnsServer.processNextRequest();
+    }
+}
+
 void repeater_stop() {
     rpt_running = false;
+    dnsServer.stop();
     rpt_webserver_stop();
     WiFi.disconnect(true);
     WiFi.softAPdisconnect(true);

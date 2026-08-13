@@ -11,7 +11,7 @@
 #endif
 
 #ifndef RPT_DEFAULT_AP_IP
-#define RPT_DEFAULT_AP_IP         "192.168.4.1"
+#define RPT_DEFAULT_AP_IP         "192.168.4.10"
 #endif
 
 #ifndef RPT_DEFAULT_AP_CHANNEL
