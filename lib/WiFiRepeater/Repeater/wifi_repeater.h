@@ -2,6 +2,7 @@
 #define WIFI_REPEATER_H
 
 #include <Arduino.h>
+#include "Repeater/repeater_stats.h"
 
 
 
@@ -15,6 +16,11 @@
  * when the repeater mode is active.
  */
 void repeater_init();
+
+/**
+ * @brief Dynamically apply new STA/AP configuration on-the-fly without system restart
+ */
+void repeater_apply_config(const char* sta_ssid, const char* sta_pass, const char* ap_ssid, const char* ap_pass);
 
 /**
  * @brief Process background tasks for repeater (Captive Portal DNS requests)
@@ -42,6 +48,16 @@ uint32_t repeater_get_sta_ip();
  * @return IP as uint32_t (network byte order)
  */
 uint32_t repeater_get_ap_ip();
+
+/**
+ * @brief Get the active AP SSID
+ */
+const char* repeater_get_ap_ssid();
+
+/**
+ * @brief Get the active AP Password
+ */
+const char* repeater_get_ap_pass();
 
 /**
  * @brief Get uptime in seconds since repeater_init()

@@ -137,7 +137,7 @@ static esp_err_t handler_index(httpd_req_t* req) {
 
     // Save button
     httpd_resp_send_chunk(req,
-        "<button class='btn btn-primary' id='saveBtn' onclick='saveConfig()'>💾 Save & Restart</button>"
+        "<button class='btn btn-primary' id='saveBtn' onclick='saveConfig()'>💾 Save & Apply</button>"
         "</div>", HTTPD_RESP_USE_STRLEN);
 
     // Send tail (includes scripts)
@@ -263,22 +263,67 @@ static esp_err_t handler_save(httpd_req_t* req) {
         strlcpy(ap_ssid_raw, RPT_DEFAULT_AP_SSID, sizeof(ap_ssid_raw));
     }
 
-    // Save to NVS
-    rpt_nvs_save_sta(sta_ssid_raw, sta_pass_raw);
-    rpt_nvs_save_ap(ap_ssid_raw, ap_pass_raw);
-
-    ESP_LOGI(TAG, "Config saved. STA='%s' AP='%s'", sta_ssid_raw, ap_ssid_raw);
+    // Apply configuration on-the-fly dynamically without rebooting system
+    repeater_apply_config(sta_ssid_raw, sta_pass_raw, ap_ssid_raw, ap_pass_raw);
 
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, "{\"ok\":true,\"msg\":\"Config saved. Restarting...\"}", HTTPD_RESP_USE_STRLEN);
-
-    // Spawn one-shot background task to restart after response is fully transmitted
-    xTaskCreatePinnedToCore([](void* p) {
-        vTaskDelay(pdMS_TO_TICKS(1500));
-        esp_restart();
-    }, "RptRebootTask", 2048, NULL, 1, NULL, 1);
-
+    httpd_resp_send(req, "{\"ok\":true,\"msg\":\"Configuration applied dynamically!\"}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
+}
+
+// ==================== GET /api/stats - Traffic & Clients API ====================
+static esp_err_t handler_stats(httpd_req_t* req) {
+    rpt_traffic_stats_t stats;
+    rpt_stats_get_traffic(&stats);
+
+    char rx_bytes_str[32], tx_bytes_str[32];
+    char rx_speed_str[32], tx_speed_str[32];
+
+    rpt_format_bytes(stats.rx_bytes_total, rx_bytes_str, sizeof(rx_bytes_str));
+    rpt_format_bytes(stats.tx_bytes_total, tx_bytes_str, sizeof(tx_bytes_str));
+    rpt_format_speed(stats.rx_speed_bps, rx_speed_str, sizeof(rx_speed_str));
+    rpt_format_speed(stats.tx_speed_bps, tx_speed_str, sizeof(tx_speed_str));
+
+    rpt_client_t clients[8];
+    int num_clients = rpt_stats_get_clients(clients, 8);
+
+    char buf[1024];
+    int pos = 0;
+
+    pos += snprintf(buf + pos, sizeof(buf) - pos,
+        "{\"rx_bytes\":%llu,\"tx_bytes\":%llu,\"rx_bytes_str\":\"%s\",\"tx_bytes_str\":\"%s\","
+        "\"rx_speed_bps\":%lu,\"tx_speed_bps\":%lu,\"rx_speed_str\":\"%s\",\"tx_speed_str\":\"%s\","
+        "\"sta_connected\":%s,\"clients_count\":%d,\"clients\":[",
+        (unsigned long long)stats.rx_bytes_total, (unsigned long long)stats.tx_bytes_total,
+        rx_bytes_str, tx_bytes_str,
+        (unsigned long)stats.rx_speed_bps, (unsigned long)stats.tx_speed_bps,
+        rx_speed_str, tx_speed_str,
+        repeater_is_sta_connected() ? "true" : "false",
+        num_clients);
+
+    for (int i = 0; i < num_clients; i++) {
+        if (i > 0) pos += snprintf(buf + pos, sizeof(buf) - pos, ",");
+        pos += snprintf(buf + pos, sizeof(buf) - pos,
+            "{\"mac\":\"%s\",\"ip\":\"%s\",\"rssi\":%d}",
+            clients[i].mac_str, clients[i].ip_str, clients[i].rssi);
+    }
+
+    pos += snprintf(buf + pos, sizeof(buf) - pos, "]}");
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, buf, pos);
+    return ESP_OK;
+}
+
+// ==================== Captive Portal Probe & Login Handlers ====================
+static esp_err_t handler_204(httpd_req_t* req) {
+    httpd_resp_set_status(req, "204 No Content");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+static esp_err_t handler_login(httpd_req_t* req) {
+    return handler_index(req);
 }
 
 // ==================== URI definitions ====================
@@ -303,6 +348,34 @@ static const httpd_uri_t uri_save = {
     .user_ctx  = NULL
 };
 
+static const httpd_uri_t uri_stats = {
+    .uri       = "/api/stats",
+    .method    = HTTP_GET,
+    .handler   = handler_stats,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t uri_login = {
+    .uri       = "/login",
+    .method    = HTTP_GET,
+    .handler   = handler_login,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t uri_gen204 = {
+    .uri       = "/generate_204",
+    .method    = HTTP_GET,
+    .handler   = handler_204,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t uri_apple_probe = {
+    .uri       = "/hotspot-detect.html",
+    .method    = HTTP_GET,
+    .handler   = handler_204,
+    .user_ctx  = NULL
+};
+
 // ==================== Start / Stop ====================
 void rpt_webserver_start(repeater_config_t* config) {
     p_config = config;
@@ -320,6 +393,10 @@ void rpt_webserver_start(repeater_config_t* config) {
     httpd_register_uri_handler(server, &uri_index);
     httpd_register_uri_handler(server, &uri_scan);
     httpd_register_uri_handler(server, &uri_save);
+    httpd_register_uri_handler(server, &uri_stats);
+    httpd_register_uri_handler(server, &uri_login);
+    httpd_register_uri_handler(server, &uri_gen204);
+    httpd_register_uri_handler(server, &uri_apple_probe);
 
     ESP_LOGI(TAG, "Web server started on port %d", RPT_WEB_PORT);
 }

@@ -64,9 +64,44 @@ void repeater_init() {
     rpt_webserver_start(&rpt_config);
     dnsServer.start(53, "*", WiFi.softAPIP());
 
+    // Initialize traffic stats netif hooks
+    rpt_stats_init();
+
     rpt_running = true;
     ESP_LOGI(TAG, "=== WiFi Repeater Ready ===");
     ESP_LOGI(TAG, "Web UI: http://192.168.4.1");
+}
+
+void repeater_apply_config(const char* sta_ssid, const char* sta_pass, const char* ap_ssid, const char* ap_pass) {
+    if (!sta_ssid) sta_ssid = "";
+    if (!sta_pass) sta_pass = "";
+    if (!ap_ssid || strlen(ap_ssid) == 0) ap_ssid = RPT_DEFAULT_AP_SSID;
+    if (!ap_pass) ap_pass = "";
+
+    // 1. Save to NVS
+    rpt_nvs_save_sta(sta_ssid, sta_pass);
+    rpt_nvs_save_ap(ap_ssid, ap_pass);
+
+    // 2. Update RAM config struct
+    strlcpy(rpt_config.sta_ssid, sta_ssid, sizeof(rpt_config.sta_ssid));
+    strlcpy(rpt_config.sta_pass, sta_pass, sizeof(rpt_config.sta_pass));
+    strlcpy(rpt_config.ap_ssid,  ap_ssid,  sizeof(rpt_config.ap_ssid));
+    strlcpy(rpt_config.ap_pass,  ap_pass,  sizeof(rpt_config.ap_pass));
+
+    ESP_LOGI(TAG, "Applying config on-the-fly: STA='%s', AP='%s'", rpt_config.sta_ssid, rpt_config.ap_ssid);
+
+    // 3. Re-configure AP on-the-fly
+    rpt_start_ap();
+    esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT40);
+
+    // 4. Re-configure STA on-the-fly
+    sta_connected = false;
+    WiFi.disconnect();
+
+    if (strlen(rpt_config.sta_ssid) > 0) {
+        rpt_connect_sta();
+        esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT40);
+    }
 }
 
 static void rpt_start_ap() {
@@ -183,13 +218,26 @@ uint32_t repeater_get_ap_ip() {
     return (uint32_t)WiFi.softAPIP();
 }
 
+const char* repeater_get_ap_ssid() {
+    return rpt_config.ap_ssid;
+}
+
+const char* repeater_get_ap_pass() {
+    return rpt_config.ap_pass;
+}
+
 uint32_t repeater_get_uptime_seconds() {
     return (millis() - boot_time_ms) / 1000;
 }
 
 void repeater_tick() {
     if (rpt_running) {
-        dnsServer.processNextRequest();
+        // Only run Captive Portal DNS hijacking when upstream STA is DISCONNECTED.
+        // When STA is connected, let AP clients resolve real Internet domain names!
+        if (!sta_connected) {
+            dnsServer.processNextRequest();
+        }
+        rpt_stats_tick();
     }
 }
 

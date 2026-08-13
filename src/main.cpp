@@ -579,29 +579,34 @@ const char* resetReasonToStr(esp_reset_reason_t reason) {
     }
 }
 
+static const uint16_t PROGMEM arrow_down_5x7[] = {
+    0x0000,0x0000,0xFFFF,0x0000,0x0000,
+    0x0000,0x0000,0xFFFF,0x0000,0x0000,
+    0x0000,0x0000,0xFFFF,0x0000,0x0000,
+    0x0000,0x0000,0xFFFF,0x0000,0x0000,
+    0xFFFF,0xFFFF,0xFFFF,0xFFFF,0xFFFF,
+    0x0000,0xFFFF,0xFFFF,0xFFFF,0x0000,
+    0x0000,0x0000,0xFFFF,0x0000,0x0000
+};
+
+static const uint16_t PROGMEM arrow_up_5x7[] = {
+    0x0000,0x0000,0xFFFF,0x0000,0x0000,
+    0x0000,0xFFFF,0xFFFF,0xFFFF,0x0000,
+    0xFFFF,0xFFFF,0xFFFF,0xFFFF,0xFFFF,
+    0x0000,0x0000,0xFFFF,0x0000,0x0000,
+    0x0000,0x0000,0xFFFF,0x0000,0x0000,
+    0x0000,0x0000,0xFFFF,0x0000,0x0000,
+    0x0000,0x0000,0xFFFF,0x0000,0x0000
+};
+
 void taskRepeater(void* p) {
     if (img) {
-        img->setTextSize(1);
-        img->setFreeFont();
         img->fillSprite(TFT_BLACK);
-        img->setTextColor(TFT_CYAN);
-        img->drawString("WiFi Repeater", 30, 20);
-        img->setTextColor(TFT_WHITE);
-        img->drawString("Starting...", 45, 45);
+        img->pushImage(55, 15, 50, 50, (uint16_t*)logoRepeater);
         img->pushSprite(0, 0);
     }
 
     repeater_init();
-
-    img->fillSprite(TFT_BLACK);
-    img->setTextColor(TFT_GREEN);
-    img->drawString("WiFi Repeater", 30, 15);
-    img->setTextColor(TFT_WHITE);
-    img->drawString("AP: " + WiFi.softAPSSID(), 5, 35);
-    img->drawString("IP: " + WiFi.softAPIP().toString(), 5, 50);
-    img->setTextColor(TFT_YELLOW);
-    img->drawString("Long press = exit", 15, 65);
-    img->pushSprite(0, 0);
 
     buttonManager.setActionCallback(([](Action action) {
         if (action == Action::LONG_PRESS_START) {
@@ -611,10 +616,100 @@ void taskRepeater(void* p) {
         })
     );
 
+    uint32_t last_screen_update = 0;
+
     while (true) {
         buttonManager.tick();
         repeater_tick();
-        vTaskDelay(pdMS_TO_TICKS(10));
+
+        uint32_t now = millis();
+        if (now - last_screen_update >= 500) {
+            last_screen_update = now;
+
+            if (img) {
+                img->fillSprite(TFT_BLACK);
+
+                // Header & Status LED
+                img->setTextColor(TFT_CYAN);
+                img->drawString("WiFi Repeater", 5, 2);
+
+                bool sta_conn = repeater_is_sta_connected();
+                if (sta_conn) {
+                    wifi_ap_record_t ap_info;
+                    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+                        char rssi_buf[16];
+                        snprintf(rssi_buf, sizeof(rssi_buf), "%d dBm", ap_info.rssi);
+
+                        img->setTextDatum(TR_DATUM);
+                        img->setTextColor(TFT_SILVER);
+                        img->drawString(rssi_buf, 140, 2);
+                        img->setTextDatum(TL_DATUM);
+                    }
+                }
+
+                img->fillCircle(148, 6, 4, sta_conn ? TFT_GREEN : TFT_RED);
+
+                img->drawFastHLine(0, 14, 160, 0x01B5); // Separator
+
+                // Traffic metrics
+                rpt_traffic_stats_t stats;
+                rpt_stats_get_traffic(&stats);
+
+                char rx_spd[32], tx_spd[32];
+                char rx_tot[32], tx_tot[32];
+
+                rpt_format_speed(stats.rx_speed_bps, rx_spd, sizeof(rx_spd));
+                rpt_format_speed(stats.tx_speed_bps, tx_spd, sizeof(tx_spd));
+                rpt_format_bytes(stats.rx_bytes_total, rx_tot, sizeof(rx_tot));
+                rpt_format_bytes(stats.tx_bytes_total, tx_tot, sizeof(tx_tot));
+
+                // Download line (Down arrow + DL speed + Right-aligned total byte count)
+                img->pushImage(5, 18, 5, 7, (uint16_t*)arrow_down_5x7);
+                img->setTextColor(TFT_GREEN);
+                img->drawString("DL: " + String(rx_spd), 14, 18);
+                img->setTextDatum(TR_DATUM);
+                img->setTextColor(TFT_SILVER);
+                img->drawString(rx_tot, 155, 18);
+                img->setTextDatum(TL_DATUM);
+
+                // Upload line (Up arrow + UL speed + Right-aligned total byte count)
+                img->pushImage(5, 32, 5, 7, (uint16_t*)arrow_up_5x7);
+                img->setTextColor(TFT_MAGENTA);
+                img->drawString("UL: " + String(tx_spd), 14, 32);
+                img->setTextDatum(TR_DATUM);
+                img->setTextColor(TFT_SILVER);
+                img->drawString(tx_tot, 155, 32);
+                img->setTextDatum(TL_DATUM);
+
+                // Separator
+                img->drawFastHLine(0, 45, 160, 0x01B5);
+
+                // Connected clients count
+                rpt_client_t clients[8];
+                int num_clients = rpt_stats_get_clients(clients, 8);
+
+                img->setTextColor(TFT_WHITE);
+                char client_buf[32];
+                snprintf(client_buf, sizeof(client_buf), "Devices: %d", num_clients);
+                img->drawString(client_buf, 5, 49);
+
+                // AP SSID & Password on bottom line (ssid | mk)
+                img->setTextColor(TFT_YELLOW);
+                const char* ap_ssid = repeater_get_ap_ssid();
+                const char* ap_pass = repeater_get_ap_pass();
+                String ap_info_str = String(ap_ssid);
+                if (ap_pass && strlen(ap_pass) > 0) {
+                    ap_info_str += " | " + String(ap_pass);
+                } else {
+                    ap_info_str += " | Open";
+                }
+                img->drawString(ap_info_str, 5, 64);
+
+                img->pushSprite(0, 0);
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 
