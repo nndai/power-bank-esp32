@@ -17,11 +17,13 @@
 class OtaUpdate {
 private:
     static TFT_eSprite* _img;
+    static std::function<void(bool success)> _onComplete;
 
     static void showProgressOnScreen();
 
 public:
     static void setDisplay(TFT_eSprite* img);
+    static void setOnComplete(std::function<void(bool success)> onComplete);
 
     static void handleCommand(WebSocketsServer& websocket, const uint8_t& num, const JsonDocument& command);
 

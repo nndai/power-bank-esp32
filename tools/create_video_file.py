@@ -38,6 +38,6 @@ def video_to_container(video_path, output_path):
     cap.release()
     print(f"Done. Saved {idx} frames to {output_path} (fps={fps})")
 
-video_name = "cat_kiss.mp4"
+video_name = "turnOff.mp4"
 output_name = video_name.rsplit(".", 1)[0] + ".bin"
-video_to_container(f"tools/video/{video_name}", f"tools/output_video/{output_name}")
+video_to_container(f"tools/videos/{video_name}", f"tools/output_videos/{output_name}")

@@ -116,8 +116,8 @@ class Uploader:
 if __name__ == "__main__":
     uploader = Uploader(
         url="ws://192.168.137.194:82",
-        local_path="tools/output_video/cat_kiss.bin",
-        remote_path="/videos/cat_kiss.vd",
+        local_path="tools/output_videos/turnOff.bin",
+        remote_path="/videos/turnOff.vd",
         key_open="writeFileToLittleFS",
         key_end="writeFileToLittleFSEnd",
         chunk_size=1024,

@@ -8,6 +8,7 @@
 #include "OtaUpdate.h"
 #include "luffy.h"
 #include "logoAttack.h"
+#include "logoRepeater.h"
 #include "Manager.h"
 #include "Repeater/wifi_repeater.h"
 #include "esp_ota_ops.h"
@@ -53,6 +54,9 @@ IP5356* ip5356;
 Eeprom24C* eeprom;
 ChargeLogger* chargeLogger;
 
+// --- Boot video ---
+static VideoPlayer* g_bootVideo = nullptr;
+
 // --- LittleFS upload state ---
 static fs::File g_uploadFile;
 static bool g_uploadInProgress = false;
@@ -87,7 +91,16 @@ void _app_log_i(String mess, String end) {
 }
 
 void taskDrawScreen(void* p) {
-    //vTaskDelay(pdMS_TO_TICKS(200));
+    // Wait for boot video to finish before drawing
+    while (g_bootVideo && g_bootVideo->isPlaying()) {
+        buttonManager.tick();
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    if (g_bootVideo) {
+        delete g_bootVideo;
+        g_bootVideo = nullptr;
+    }
+
     uint8_t count = 0;
     while (true) {
         buttonManager.tick();
@@ -241,7 +254,7 @@ void taskWifi(void* p) {
         WiFi.getMode() == WIFI_MODE_AP ? "AP" : "STA+AP")));
     _app_log_i((String)"Status: " + (WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected"));
 
-    xTaskCreatePinnedToCore(webSocketTask, "WebSocketTask", 8192, NULL, 1, &taskHandleWebsocket, 0);
+    xTaskCreatePinnedToCore(webSocketTask, "WebSocketTask", 12000, NULL, 1, &taskHandleWebsocket, 0);
     taskHandleWifi = NULL;
     vTaskDelete(NULL);
 }
@@ -398,9 +411,10 @@ void taskDisplayAttackLogs(void* p) {
     }
 
     set_log_enabled(true);
-    set_log_esp_enabled(false);
+    set_log_queue_enabled(true);
 
     img->setTextSize(1);
+    img->setFreeFont();
 
     // Initial clear
     //img->fillSprite(TFT_BLACK);
@@ -565,6 +579,67 @@ const char* resetReasonToStr(esp_reset_reason_t reason) {
     }
 }
 
+void taskRepeater(void* p) {
+    if (img) {
+        img->setTextSize(1);
+        img->setFreeFont();
+    }
+
+    repeater_set_progress_callback([](int step, const char* msg) {
+        if (!img) return;
+        img->fillSprite(TFT_BLACK);
+        img->setTextColor(TFT_CYAN);
+        img->drawString("Repeater Init", 30, 5);
+        img->setTextColor(TFT_YELLOW);
+
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Step %d/11", step);
+        img->drawString(buf, 5, 25);
+
+        img->setTextColor(TFT_WHITE);
+        img->drawString(msg, 5, 45);
+
+        // Progress bar
+        int barW = (step * 150) / 11;
+        img->drawRect(5, 65, 150, 10, TFT_DARKGREY);
+        img->fillRect(5, 65, barW, 10, step == 11 ? TFT_GREEN : TFT_CYAN);
+
+        img->pushSprite(0, 0);
+        delay(150);
+    });
+
+    repeater_init();
+
+    // Clear callback after init
+    repeater_set_progress_callback(NULL);
+
+    vTaskDelay(pdMS_TO_TICKS(1500)); // show "DONE!" briefly
+
+    img->fillSprite(TFT_BLACK);
+    img->setTextColor(TFT_GREEN);
+    img->drawString("WiFi Repeater", 30, 15);
+    img->setTextColor(TFT_WHITE);
+    img->drawString("AP: " + WiFi.softAPSSID(), 5, 35);
+    img->drawString("IP: " + WiFi.softAPIP().toString(), 5, 50);
+    img->setTextColor(TFT_YELLOW);
+    img->drawString("Long press = exit", 15, 65);
+    img->pushSprite(0, 0);
+
+    buttonManager.setActionCallback(([](Action action) {
+        if (action == Action::LONG_PRESS_START) {
+            repeater_stop();
+            esp_restart();
+        }
+        })
+    );
+
+    while (true) {
+        buttonManager.tick();
+        repeater_tick();
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
 
 void setup() {
     //#############################################################################
@@ -576,32 +651,29 @@ void setup() {
     tft->setRotation(1);
     tft->setSwapBytes(true);
 
-    //tft->fillScreen(TFT_DARKCYAN);
+    tft->fillScreen(TFT_BLACK);
+
+    delay(100);
+    brightness = new Brightness(TFT_BL_PIN, 0);
+    brightness->setPercent(10);
 
     Wire.begin(SDA_I2C_PIN, SCL_I2C_PIN, 200000);
     eeprom = new Eeprom24C(&Wire, 2, 0x50);
 
     eeprom->read(EEPROM_DATA_ADDR, &powerBankData, sizeof(powerBankData));
-    if (powerBankData.modeAttack) {
-        tft->pushImage(0, 0, 160, 80, logoAttack);
-    }
-    else {
-        tft->pushImage(0, 0, 160, 80, luffy);
-    }
-
-
-    brightness = new Brightness(TFT_BL_PIN, 0);
-    brightness->setPercent(powerBankData.brightness);
-    brightness->on();
 
     img = new TFT_eSprite(tft);
     img->createSprite(160, 80);
     img->setSwapBytes(true);
+    img->setTextSize(1);
+    img->setFreeFont();
+
+    brightness->setPercent(powerBankData.brightness);
 
     esp_reset_reason_t reason = esp_reset_reason();
     _app_log_i("Reason reset: " + String(resetReasonToStr(reason)));
     if (reason == ESP_RST_POWERON || reason == ESP_RST_PANIC || reason == ESP_RST_TASK_WDT || reason == ESP_RST_INT_WDT ||
-        reason == ESP_RST_WDT || reason == ESP_RST_WDT || powerBankData.modeUpdateFirmware) {
+        reason == ESP_RST_WDT || reason == ESP_RST_WDT || powerBankData.modeUpdateFirmware ||1) {
         pinMode(BUTTON_PIN, INPUT_PULLDOWN);
         if (digitalRead(BUTTON_PIN) == HIGH || powerBankData.modeUpdateFirmware) {
             powerBankData.modeUpdateFirmware = false;
@@ -611,6 +683,13 @@ void setup() {
             isUploadFirmware = true;
 
             OtaUpdate::setDisplay(img);
+            OtaUpdate::setOnComplete([](bool success) {
+                if (success) {
+                    powerBankData.onWifi = true; // Auto turn on wifi after update firmware to validate OTA.
+                    savePowerBankData(powerBankData);
+                }
+                esp_restart();
+            });
             xTaskCreatePinnedToCore(taskWifi, "WifiTask", 4096, NULL, 1, &taskHandleWifi, 0);
             button.attachLongPressStart(esp_restart);
             while (true) {
@@ -619,6 +698,28 @@ void setup() {
             }
         }
     }
+
+    if (powerBankData.modeAttack) {
+        tft->pushImage(0, 0, 160, 80, logoAttack);
+    }
+    else if (powerBankData.modeRepeater) {
+        tft->pushImage(65, 15, 50, 50, logoRepeater);
+    }
+    else {
+        LittleFS.begin(true);
+        g_bootVideo = new VideoPlayer;
+        if (g_bootVideo->open("/videos/cat_kiss.vd")) {
+            g_bootVideo->setLoop(false);
+            g_bootVideo->play();
+        }
+        else {
+            // Fallback to static image if video not found
+            tft->pushImage(0, 0, 160, 80, luffy);
+            delete g_bootVideo;
+            g_bootVideo = nullptr;
+        }
+    }
+
     //############################################################################################
 
     if (powerBankData.modeAttack) {
@@ -647,33 +748,7 @@ void setup() {
         powerBankData.modeRepeater = false;
         savePowerBankData(powerBankData);
 
-        img->fillSprite(TFT_BLACK);
-        img->setTextColor(TFT_CYAN);
-        img->drawString("WiFi Repeater", 30, 30);
-        img->setTextColor(TFT_WHITE);
-        img->drawString("Starting...", 45, 50);
-        img->pushSprite(0, 0);
-
-        repeater_init();
-
-        img->fillSprite(TFT_BLACK);
-        img->setTextColor(TFT_GREEN);
-        img->drawString("WiFi Repeater", 30, 15);
-        img->setTextColor(TFT_WHITE);
-        img->drawString("AP: " + WiFi.softAPSSID(), 5, 35);
-        img->drawString("IP: " + WiFi.softAPIP().toString(), 5, 50);
-        img->setTextColor(TFT_YELLOW);
-        img->drawString("Long press = exit", 15, 65);
-        img->pushSprite(0, 0);
-
-        buttonManager.setActionCallback(([](Action action) {
-            if (action == Action::LONG_PRESS_START) {
-                repeater_stop();
-                esp_restart();
-            }
-            })
-        );
-        xTaskCreatePinnedToCore(taskButtonTick, "ButtonTick", 2048, NULL, 1, NULL, 1);
+        xTaskCreatePinnedToCore(taskRepeater, "RepeaterTask", 16384, NULL, 1, NULL, 1);
         return;
     }
 
@@ -696,7 +771,9 @@ void setup() {
         })
     );
 
-    LittleFS.begin(true);
+    if (!LittleFS.begin(true)) {
+        _app_log_e("LittleFS mount failed");
+    }
     //LittleFS.format();
 
     if (powerBankData.indexTimeAutoSleep >= sleepValueOptions.size()) {
@@ -711,7 +788,7 @@ void setup() {
     delay(1000);
     ip5356->init();
     ip5356->reduceChargeCurrentWhenHot(powerBankData.reduceChargeCurrentWhenHot);
-    ip5356->setBatteryCapacity(9000); //mAh
+    ip5356->setBatteryCapacity(8000); //mAh
 
     xTaskCreatePinnedToCore(taskDrawScreen, "drawScreen", 4096, NULL, 3, &taskHandleDrawScreen, 1);
 
@@ -725,7 +802,6 @@ void setup() {
     chargeLogger->begin();
 
     xTaskCreatePinnedToCore(taskChargeCycleCalculator, "ChargeCycleCalculator", 4096, NULL, 4, &taskHandleChargeCycleCalculator, 1);
-
 
 
 }

@@ -2,7 +2,7 @@
 
 Eeprom24C::Eeprom24C(TwoWire* wire, uint32_t size_m, uint8_t deviceAddress) {
     log_i("Eeprom24C init");
-    if(_i2c == nullptr){
+    if (wire == nullptr) {
         _i2c = &Wire;
     }
     else {

@@ -3,6 +3,7 @@
 #include "Globals.h"
 
 TFT_eSprite* OtaUpdate::_img = nullptr;
+std::function<void(bool success)> OtaUpdate::_onComplete = nullptr;
 
 void OtaUpdate::showProgressOnScreen() {
     if (!_img) return;
@@ -45,6 +46,10 @@ void OtaUpdate::setDisplay(TFT_eSprite* img) {
         _img->setFreeFont();
         showProgressOnScreen();
     }
+}
+
+void OtaUpdate::setOnComplete(std::function<void(bool success)> onComplete) {
+    _onComplete = onComplete;
 }
 
 void OtaUpdate::handleCommand(WebSocketsServer& websocket, const uint8_t& num, const JsonDocument& command) {
@@ -92,7 +97,9 @@ void OtaUpdate::handleCommand(WebSocketsServer& websocket, const uint8_t& num, c
             vTaskDelay(pdMS_TO_TICKS(500));
             websocket.close();
             vTaskDelay(pdMS_TO_TICKS(100));
-            ESP.restart();
+            if (_onComplete) {
+                _onComplete(true);
+            }
         }
         else {
             websocket.sendTXT(num, "{\"cmd\":\"uploadFirmwareFailed\", \"error\":\"" + String(Update.errorString()) + "\"}");
