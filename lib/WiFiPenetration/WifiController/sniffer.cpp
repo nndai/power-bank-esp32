@@ -4,6 +4,7 @@
 #include "esp_err.h"
 
 #include "AttackLog/log.h"
+#include "Config/config.h"
 #include "esp_event.h"
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
@@ -72,4 +73,5 @@ void wifictl_sniffer_start(uint8_t channel) {
 void wifictl_sniffer_stop() {
     ATTACK_LOG_I(TAG, "Stop promiscuous mode");
     esp_wifi_set_promiscuous(false);
+    esp_wifi_set_channel(CONFIG_MGMT_AP_CHANNEL, WIFI_SECOND_CHAN_NONE);
 }

@@ -213,6 +213,9 @@ void webserver_run() {
     ATTACK_LOG_D(TAG, "Running webserver");
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.max_open_sockets = 10;
+    config.lru_purge_enable = true;
+    config.send_wait_timeout = 3;
     httpd_handle_t server = NULL;
 
     ESP_ERROR_CHECK(httpd_start(&server, &config));
