@@ -19,3 +19,4 @@ lib/JPEGDEC
 *.bin
 
 test/README
+lib/WiFiPenetration/WebServer/pages/page_index.h

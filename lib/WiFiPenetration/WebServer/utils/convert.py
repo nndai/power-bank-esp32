@@ -1,10 +1,11 @@
 import gzip
 import os
 
-input_file = "index.html"
+script_dir = os.path.dirname(os.path.abspath(__file__))
+input_file = os.path.join(script_dir, "../pages/index.html")
 output_name = "page_index"
 output_header_filename = "page_index.h"
-destination_dir = "../pages"
+destination_dir = os.path.join(script_dir, "../pages")
 
 # Gzip content
 with open(input_file, 'rb') as f_in:
