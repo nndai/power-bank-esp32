@@ -111,7 +111,7 @@ static void attack_request_handler(void *args, esp_event_base_t event_base, int3
         return;
     }
     // set timeout
-    ESP_ERROR_CHECK(esp_timer_start_once(attack_timeout_handle, attack_config.timeout * 1000000));
+    ESP_ERROR_CHECK(esp_timer_start_once(attack_timeout_handle, (uint64_t)attack_config.timeout * 1000000ULL));
     // start attack based on it's type
     switch(attack_config.type) {
         case ATTACK_TYPE_PMKID:
