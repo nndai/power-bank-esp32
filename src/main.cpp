@@ -11,6 +11,7 @@
 #include "logoRepeater.h"
 #include "Manager.h"
 #include "Repeater/wifi_repeater.h"
+#include "RequestWifiInet.h"
 #include "esp_ota_ops.h"
 #include "Globals.h"
 #include "esp_task_wdt.h"
@@ -608,8 +609,11 @@ void taskRepeater(void* p) {
 
     repeater_init();
 
+    String current_sta_check = "";
+
     buttonManager.setActionCallback(([](Action action) {
         if (action == Action::LONG_PRESS_START) {
+            stopWifiInetLogin();
             repeater_stop();
             esp_restart();
         }
@@ -623,7 +627,7 @@ void taskRepeater(void* p) {
         repeater_tick();
 
         uint32_t now = millis();
-        if (now - last_screen_update >= 500) {
+        if (now - last_screen_update >= 1000) {
             last_screen_update = now;
 
             if (img) {
@@ -706,6 +710,22 @@ void taskRepeater(void* p) {
                 img->drawString(ap_info_str, 5, 64);
 
                 img->pushSprite(0, 0);
+            }
+
+            
+            // Check if STA SSID contains "inet" (case-insensitive) and manage RequestWifiInet login
+            const char* sta_ssid_ptr = repeater_get_sta_ssid();
+            String sta_ssid_curr = sta_ssid_ptr ? String(sta_ssid_ptr) : "";
+            if (sta_ssid_curr != current_sta_check) {
+                current_sta_check = sta_ssid_curr;
+                String sta_lower = sta_ssid_curr;
+                sta_lower.toLowerCase();
+                if (sta_lower.indexOf("inet") != -1) {
+                    ESP_LOGI("Main", "STA SSID contains 'inet'. Auto-starting RequestWifiInet login manager...");
+                    startWifiInetLogin();
+                } else {
+                    stopWifiInetLogin();
+                }
             }
         }
 

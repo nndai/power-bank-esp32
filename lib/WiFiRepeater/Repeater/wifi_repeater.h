@@ -44,6 +44,11 @@ uint16_t repeater_get_client_count();
 uint32_t repeater_get_sta_ip();
 
 /**
+ * @brief Get the active STA SSID
+ */
+const char* repeater_get_sta_ssid();
+
+/**
  * @brief Get the AP IP address
  * @return IP as uint32_t (network byte order)
  */

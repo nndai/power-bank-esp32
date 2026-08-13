@@ -57,7 +57,7 @@ void repeater_init() {
         rpt_connect_sta();
         esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT40);
     } else {
-        ESP_LOGI(TAG, "No upstream WiFi configured. Use web UI at 192.168.4.1 to configure.");
+        ESP_LOGI(TAG, "No upstream WiFi configured. Use web UI at http://%s to configure.", WiFi.softAPIP().toString().c_str());
     }
 
     // Start the web server and DNS captive portal server
@@ -69,7 +69,7 @@ void repeater_init() {
 
     rpt_running = true;
     ESP_LOGI(TAG, "=== WiFi Repeater Ready ===");
-    ESP_LOGI(TAG, "Web UI: http://192.168.4.1");
+    ESP_LOGI(TAG, "Web UI: http://%s", WiFi.softAPIP().toString().c_str());
 }
 
 void repeater_apply_config(const char* sta_ssid, const char* sta_pass, const char* ap_ssid, const char* ap_pass) {
@@ -212,6 +212,10 @@ uint16_t repeater_get_client_count() {
 uint32_t repeater_get_sta_ip() {
     if (!sta_connected) return 0;
     return (uint32_t)WiFi.localIP();
+}
+
+const char* repeater_get_sta_ssid() {
+    return rpt_config.sta_ssid;
 }
 
 uint32_t repeater_get_ap_ip() {
