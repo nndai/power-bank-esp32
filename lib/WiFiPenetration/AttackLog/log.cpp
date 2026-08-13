@@ -8,7 +8,7 @@
 
 QueueHandle_t g_log_queue;
 bool is_log_enabled = false;
-bool is_log_esp_enabled = true; // true : esp_log, false : queue log
+bool is_log_queue_enabled = true;
 
 /**
  * @brief Initialize logger queue
@@ -24,20 +24,22 @@ void set_log_enabled(bool enabled)
     is_log_enabled = enabled;
 }
 
-void set_log_esp_enabled(bool enabled)
+void set_log_queue_enabled(bool enabled)
 {
-    is_log_esp_enabled = enabled;
+    is_log_queue_enabled = enabled;
 }
 
-void log_push(const char *tag, const char *format, ...)
+void log_push(const char* tag, const char* format, ...)
 {
-    if(!is_log_enabled) return;
+    if (!is_log_enabled) return;
 
-    if(is_log_esp_enabled){
-        va_list args;
-        va_start(args, format);
-        esp_log_writev(ESP_LOG_INFO, tag, format, args);
-        va_end(args);
+    va_list args;
+    va_start(args, format);
+    esp_log_writev(ESP_LOG_INFO, tag, format, args);
+    va_end(args);
+    return;
+
+    if (!is_log_queue_enabled) {
         return;
     }
 
@@ -51,7 +53,7 @@ void log_push(const char *tag, const char *format, ...)
     strncpy(log.tag, tag, sizeof(log.tag) - 1);
     log.tag[sizeof(log.tag) - 1] = '\0';
 
-    va_list args;
+
     va_start(args, format);
     vsnprintf(log.msg, sizeof(log.msg), format, args);
     va_end(args);
@@ -61,13 +63,14 @@ void log_push(const char *tag, const char *format, ...)
 
 void log_push(esp_log_level_t level, const char* tag, const char* format, ...)
 {
-    if(!is_log_enabled) return;
+    if (!is_log_enabled) return;
 
-    if(is_log_esp_enabled){
-        va_list args;
-        va_start(args, format);
-        esp_log_writev(level, tag, format, args);
-        va_end(args);
+    va_list args;
+    va_start(args, format);
+    esp_log_writev(level, tag, format, args);
+    va_end(args);
+
+    if (!is_log_queue_enabled) {
         return;
     }
 
@@ -81,7 +84,7 @@ void log_push(esp_log_level_t level, const char* tag, const char* format, ...)
     strncpy(log.tag, tag, sizeof(log.tag) - 1);
     log.tag[sizeof(log.tag) - 1] = '\0';
 
-    va_list args;
+
     va_start(args, format);
     vsnprintf(log.msg, sizeof(log.msg), format, args);
     va_end(args);

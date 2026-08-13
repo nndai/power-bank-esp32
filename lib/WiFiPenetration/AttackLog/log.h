@@ -36,7 +36,7 @@ void log_init();
  * 
  * @param enabled Log esp enabled state
  */
-void set_log_esp_enabled(bool enabled);
+void set_log_queue_enabled(bool enabled);
 
 /**
  * @brief Pushes log entry into log queue with specified level.
